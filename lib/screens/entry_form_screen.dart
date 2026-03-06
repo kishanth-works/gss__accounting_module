@@ -19,8 +19,6 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
   final TextEditingController _creditController = TextEditingController();
 
   DateTime _selectedDate = DateTime.now();
-
-  // NEW DEFAULT TYPE
   String _entryType = 'Rokad';
 
   bool _isLoading = false;
@@ -33,14 +31,58 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
   @override
   void initState() {
     super.initState();
-    _fetchAccounts();
+    _fetchInitialData();
   }
 
-  Future<void> _fetchAccounts() async {
+  Future<void> _fetchInitialData() async {
     setState(() => _isLoadingAccounts = true);
     final accounts = await SheetsService.getCategorizedAccounts();
+
+    // NEW: Smart logic to find the very last entered date
+    DateTime lastDate = DateTime.now();
+    try {
+      final rows = await SheetsService.getAllEntries();
+      if (rows.isNotEmpty) {
+        rows.sort((a, b) {
+          int idA =
+              int.tryParse(
+                (a['ID'] ?? a['id'] ?? '0').replaceAll(RegExp(r'[^0-9]'), ''),
+              ) ??
+              0;
+          int idB =
+              int.tryParse(
+                (b['ID'] ?? b['id'] ?? '0').replaceAll(RegExp(r'[^0-9]'), ''),
+              ) ??
+              0;
+          return idA.compareTo(idB);
+        });
+
+        String dateStr = rows.last['Date'] ?? rows.last['date'] ?? '';
+        if (int.tryParse(dateStr) != null && dateStr.length == 5) {
+          lastDate = DateTime(
+            1899,
+            12,
+            30,
+          ).add(Duration(days: int.parse(dateStr)));
+        } else {
+          try {
+            lastDate = DateFormat('dd/MM/yyyy').parse(dateStr);
+          } catch (_) {
+            try {
+              lastDate = DateFormat('yyyy-MM-dd').parse(dateStr);
+            } catch (_) {
+              lastDate = DateTime.tryParse(dateStr) ?? DateTime.now();
+            }
+          }
+        }
+      }
+    } catch (e) {
+      // Fallback to today if it fails
+    }
+
     setState(() {
       _categorizedAccounts = accounts;
+      _selectedDate = lastDate; // Set the default date to the last entry
       _isLoadingAccounts = false;
       if (_selectedHead != null &&
           !_categorizedAccounts.containsKey(_selectedHead)) {
@@ -73,7 +115,7 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
               TextFormField(
                 controller: accController,
                 decoration: const InputDecoration(
-                  labelText: 'Account Name (e.g., SBI Bank)',
+                  labelText: 'Particular Name (e.g., SBI Bank)',
                 ),
               ),
             ],
@@ -96,7 +138,7 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
                         );
                         if (!mounted) return;
                         Navigator.pop(context);
-                        _fetchAccounts();
+                        _fetchInitialData();
                       }
                     },
               child: isSaving
@@ -130,7 +172,7 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
       if (_selectedAccount == null) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Please select an Account.'),
+            content: Text('Please select a Particular.'),
             backgroundColor: Colors.orange,
           ),
         );
@@ -148,7 +190,9 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
 
       final entryData = {
         'id': generateId,
-        'date': DateFormat('yyyy-MM-dd').format(_selectedDate),
+        'date': DateFormat(
+          'dd/MM/yyyy',
+        ).format(_selectedDate), // NEW: Strictly saving as dd/MM/yyyy
         'entryType': _entryType,
         'account': _selectedAccount,
         'description': _descController.text,
@@ -215,8 +259,8 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
                       onPressed: _pickDate,
                       icon: const Icon(Icons.calendar_today, size: 18),
                       label: Text(
-                        DateFormat('yyyy-MM-dd').format(_selectedDate),
-                      ),
+                        DateFormat('dd/MM/yyyy').format(_selectedDate),
+                      ), // NEW FORMAT
                     ),
                   ),
                   const SizedBox(width: 16),
@@ -228,7 +272,6 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
                         labelText: 'Type',
                         border: OutlineInputBorder(),
                       ),
-                      // UPDATED TO TRADITIONAL NAMES
                       items: ['Rokad', 'Jama-Kharchi']
                           .map(
                             (v) => DropdownMenuItem(value: v, child: Text(v)),
@@ -268,9 +311,9 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
                         DropdownButtonFormField<String>(
                           initialValue: _selectedAccount,
                           decoration: const InputDecoration(
-                            labelText: 'Select Account',
+                            labelText: 'Select Particular',
                             border: OutlineInputBorder(),
-                          ),
+                          ), // RENAMED
                           items: availableAccounts
                               .map(
                                 (a) =>
@@ -291,7 +334,7 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
                       color: Colors.blue,
                       size: 36,
                     ),
-                    tooltip: 'Create New Account',
+                    tooltip: 'Create New Particular',
                     onPressed: _addNewAccountDialog,
                   ),
                 ],
@@ -301,10 +344,10 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
               TextFormField(
                 controller: _descController,
                 decoration: const InputDecoration(
-                  labelText: 'Particulars / Narration',
+                  labelText: 'Description',
                   border: OutlineInputBorder(),
                 ),
-              ),
+              ), // RENAMED
               const SizedBox(height: 16),
 
               Row(

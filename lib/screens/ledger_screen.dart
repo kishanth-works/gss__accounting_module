@@ -1,7 +1,10 @@
 // ignore_for_file: use_build_context_synchronously
 
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:excel/excel.dart' as excel;
+import 'package:file_picker/file_picker.dart';
 import '../services/sheets_service.dart';
 
 class LedgerScreen extends StatefulWidget {
@@ -17,7 +20,11 @@ class _LedgerScreenState extends State<LedgerScreen> {
 
   List<Map<String, dynamic>> _allTransactions = [];
   List<Map<String, dynamic>> _filteredTransactions = [];
+
   String _searchQuery = '';
+  String? _selectedAccountFilter;
+  String _selectedTypeFilter = 'All';
+  List<String> _availableAccounts = [];
 
   @override
   void initState() {
@@ -26,14 +33,12 @@ class _LedgerScreenState extends State<LedgerScreen> {
   }
 
   Future<void> _fetchTransactions({bool isSilent = false}) async {
-    if (!isSilent) {
-      setState(() {
-        _isLoading = true;
-      });
-    }
+    if (!isSilent) setState(() => _isLoading = true);
+
     try {
       final rawRows = await SheetsService.getAllEntries();
       List<Map<String, dynamic>> parsedRows = [];
+      Set<String> accountsSet = {};
 
       for (var row in rawRows) {
         try {
@@ -48,27 +53,32 @@ class _LedgerScreenState extends State<LedgerScreen> {
               ).add(Duration(days: int.parse(dateStr)));
             } else {
               try {
-                rowDate = DateFormat('yyyy-MM-dd').parse(dateStr);
+                rowDate = DateFormat('dd/MM/yyyy').parse(dateStr);
               } catch (_) {
-                rowDate = DateTime.tryParse(dateStr);
+                try {
+                  rowDate = DateFormat('yyyy-MM-dd').parse(dateStr);
+                } catch (_) {
+                  rowDate = DateTime.tryParse(dateStr);
+                }
               }
             }
           }
 
           if (_selectedDateRange != null && rowDate != null) {
             if (rowDate.isBefore(_selectedDateRange!.start) ||
-                rowDate.isAfter(
-                  _selectedDateRange!.end.add(const Duration(days: 1)),
-                )) {
+                rowDate.isAfter(_selectedDateRange!.end)) {
               continue;
             }
           }
 
           if (rowDate != null) {
-            row['displayDate'] = DateFormat('yyyy-MM-dd').format(rowDate);
+            row['displayDate'] = DateFormat('dd/MM/yyyy').format(rowDate);
           } else {
             row['displayDate'] = dateStr;
           }
+
+          String acc = row['Account'] ?? row['account'] ?? '';
+          if (acc.isNotEmpty) accountsSet.add(acc);
 
           parsedRows.add(row);
         } catch (e) {
@@ -76,61 +86,69 @@ class _LedgerScreenState extends State<LedgerScreen> {
         }
       }
 
+      // FIXED: Sort UI Date DESCENDING (Newest first), then ID DESCENDING
       parsedRows.sort((a, b) {
-        DateTime dateA =
-            DateTime.tryParse(a['displayDate'] ?? '') ??
-            DateTime.fromMillisecondsSinceEpoch(0);
-        DateTime dateB =
-            DateTime.tryParse(b['displayDate'] ?? '') ??
-            DateTime.fromMillisecondsSinceEpoch(0);
+        DateTime dateA = DateTime.fromMillisecondsSinceEpoch(0);
+        DateTime dateB = DateTime.fromMillisecondsSinceEpoch(0);
+        try {
+          dateA = DateFormat('dd/MM/yyyy').parse(a['displayDate'] ?? '');
+        } catch (_) {}
+        try {
+          dateB = DateFormat('dd/MM/yyyy').parse(b['displayDate'] ?? '');
+        } catch (_) {}
 
-        int dateComparison = dateB.compareTo(dateA);
-        if (dateComparison != 0) {
-          return dateComparison;
-        } else {
-          int idA =
-              int.tryParse(
-                (a['ID'] ?? a['id'] ?? '0').replaceAll(RegExp(r'[^0-9]'), ''),
-              ) ??
-              0;
-          int idB =
-              int.tryParse(
-                (b['ID'] ?? b['id'] ?? '0').replaceAll(RegExp(r'[^0-9]'), ''),
-              ) ??
-              0;
-          return idB.compareTo(idA);
-        }
+        int dateComparison = dateB.compareTo(dateA); // Descending
+        if (dateComparison != 0) return dateComparison;
+
+        int idA =
+            int.tryParse(
+              (a['ID'] ?? a['id'] ?? '0').replaceAll(RegExp(r'[^0-9]'), ''),
+            ) ??
+            0;
+        int idB =
+            int.tryParse(
+              (b['ID'] ?? b['id'] ?? '0').replaceAll(RegExp(r'[^0-9]'), ''),
+            ) ??
+            0;
+        return idB.compareTo(idA); // Descending
       });
 
       setState(() {
         _allTransactions = parsedRows;
+        _availableAccounts = accountsSet.toList()..sort();
+        if (_selectedAccountFilter != null &&
+            !_availableAccounts.contains(_selectedAccountFilter)) {
+          _selectedAccountFilter = null;
+        }
         _applySearchFilter();
         _isLoading = false;
       });
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
   void _applySearchFilter() {
-    if (_searchQuery.isEmpty) {
-      _filteredTransactions = _allTransactions;
-    } else {
-      _filteredTransactions = _allTransactions.where((row) {
-        final account = (row['Account'] ?? row['account'] ?? '').toLowerCase();
-        final desc = (row['Description'] ?? row['description'] ?? '')
-            .toLowerCase();
-        final id = (row['ID'] ?? row['id'] ?? '').toLowerCase();
-        final query = _searchQuery.toLowerCase();
-        return account.contains(query) ||
-            desc.contains(query) ||
-            id.contains(query);
-      }).toList();
-    }
+    _filteredTransactions = _allTransactions.where((row) {
+      final account = (row['Account'] ?? row['account'] ?? '');
+      final type = (row['EntryType'] ?? row['entryType'] ?? '');
+      final desc = (row['Description'] ?? row['description'] ?? '')
+          .toLowerCase();
+      final id = (row['ID'] ?? row['id'] ?? '').toLowerCase();
+      final query = _searchQuery.toLowerCase();
+
+      bool matchesSearch =
+          query.isEmpty ||
+          account.toLowerCase().contains(query) ||
+          desc.contains(query) ||
+          id.contains(query);
+      bool matchesAccount =
+          _selectedAccountFilter == null || account == _selectedAccountFilter;
+      bool matchesType =
+          _selectedTypeFilter == 'All' || type == _selectedTypeFilter;
+
+      return matchesSearch && matchesAccount && matchesType;
+    }).toList();
   }
 
   Future<void> _selectDateRange() async {
@@ -141,11 +159,363 @@ class _LedgerScreenState extends State<LedgerScreen> {
       lastDate: DateTime(2100),
     );
     if (picked != null && picked != _selectedDateRange) {
-      setState(() {
-        _selectedDateRange = picked;
-      });
+      setState(() => _selectedDateRange = picked);
       _fetchTransactions();
     }
+  }
+
+  Future<void> _exportLedgerToExcel() async {
+    setState(() => _isLoading = true);
+
+    try {
+      var excelFile = excel.Excel.createExcel();
+      excel.Sheet sheetObject = excelFile['Report'];
+      excelFile.setDefaultSheet('Report');
+
+      sheetObject.setColumnWidth(0, 10.0);
+      sheetObject.setColumnWidth(1, 12.0);
+      sheetObject.setColumnWidth(2, 14.0);
+      sheetObject.setColumnWidth(3, 30.0);
+      sheetObject.setColumnWidth(4, 40.0);
+      sheetObject.setColumnWidth(5, 18.0);
+      sheetObject.setColumnWidth(6, 18.0);
+
+      var borderStyle = excel.Border(borderStyle: excel.BorderStyle.Thin);
+      var titleStyle = excel.CellStyle(
+        fontFamily: 'Times New Roman',
+        fontSize: 16,
+        bold: true,
+        horizontalAlign: excel.HorizontalAlign.Center,
+      );
+      var subTitleStyle = excel.CellStyle(
+        fontFamily: 'Times New Roman',
+        fontSize: 14,
+        bold: true,
+        horizontalAlign: excel.HorizontalAlign.Center,
+      );
+      var headerStyle = excel.CellStyle(
+        fontFamily: 'Times New Roman',
+        fontSize: 12,
+        bold: true,
+        horizontalAlign: excel.HorizontalAlign.Center,
+        leftBorder: borderStyle,
+        rightBorder: borderStyle,
+        topBorder: borderStyle,
+        bottomBorder: borderStyle,
+      );
+
+      // Separate styles for normal content and bold accounts
+      var contentStyle = excel.CellStyle(
+        fontFamily: 'Times New Roman',
+        fontSize: 12,
+        leftBorder: borderStyle,
+        rightBorder: borderStyle,
+        topBorder: borderStyle,
+        bottomBorder: borderStyle,
+      );
+      var boldAccountStyle = excel.CellStyle(
+        fontFamily: 'Times New Roman',
+        fontSize: 12,
+        bold: true,
+        leftBorder: borderStyle,
+        rightBorder: borderStyle,
+        topBorder: borderStyle,
+        bottomBorder: borderStyle,
+      );
+
+      var currencyStyle = excel.CellStyle(
+        fontFamily: 'Times New Roman',
+        fontSize: 12,
+        horizontalAlign: excel.HorizontalAlign.Right,
+        numberFormat: excel.NumFormat.standard_2,
+        leftBorder: borderStyle,
+        rightBorder: borderStyle,
+        topBorder: borderStyle,
+        bottomBorder: borderStyle,
+      );
+      var totalStyle = excel.CellStyle(
+        fontFamily: 'Times New Roman',
+        fontSize: 12,
+        bold: true,
+        horizontalAlign: excel.HorizontalAlign.Right,
+        numberFormat: excel.NumFormat.standard_2,
+        leftBorder: borderStyle,
+        rightBorder: borderStyle,
+        topBorder: borderStyle,
+        bottomBorder: borderStyle,
+      );
+
+      sheetObject.merge(
+        excel.CellIndex.indexByString("A1"),
+        excel.CellIndex.indexByString("G1"),
+      );
+      sheetObject.updateCell(
+        excel.CellIndex.indexByString("A1"),
+        excel.TextCellValue("Gramodyog Seva Sansthan"),
+        cellStyle: titleStyle,
+      );
+
+      String reportName = "Transaction Ledger Report";
+      if (_selectedTypeFilter != 'All') {
+        reportName = "$_selectedTypeFilter Report";
+      }
+      if (_selectedAccountFilter != null) {
+        reportName =
+            "Particular Ledger: ${_selectedAccountFilter!.toUpperCase()}";
+      }
+      if (_selectedDateRange != null &&
+          _selectedDateRange!.start == _selectedDateRange!.end) {
+        reportName = "Roznamcha (Daily Cash Book)";
+      }
+
+      sheetObject.merge(
+        excel.CellIndex.indexByString("A2"),
+        excel.CellIndex.indexByString("G2"),
+      );
+      sheetObject.updateCell(
+        excel.CellIndex.indexByString("A2"),
+        excel.TextCellValue(reportName),
+        cellStyle: titleStyle,
+      );
+
+      sheetObject.merge(
+        excel.CellIndex.indexByString("A3"),
+        excel.CellIndex.indexByString("G3"),
+      );
+      String dateRangeStr = "Date: All Time";
+      if (_selectedDateRange != null) {
+        dateRangeStr =
+            "Date: ${DateFormat('dd/MM/yyyy').format(_selectedDateRange!.start)} to ${DateFormat('dd/MM/yyyy').format(_selectedDateRange!.end)}";
+      }
+      sheetObject.updateCell(
+        excel.CellIndex.indexByString("A3"),
+        excel.TextCellValue(dateRangeStr),
+        cellStyle: subTitleStyle,
+      );
+
+      sheetObject.updateCell(
+        excel.CellIndex.indexByString("A5"),
+        excel.TextCellValue("ID"),
+        cellStyle: headerStyle,
+      );
+      sheetObject.updateCell(
+        excel.CellIndex.indexByString("B5"),
+        excel.TextCellValue("Date"),
+        cellStyle: headerStyle,
+      );
+      sheetObject.updateCell(
+        excel.CellIndex.indexByString("C5"),
+        excel.TextCellValue("Type"),
+        cellStyle: headerStyle,
+      );
+      sheetObject.updateCell(
+        excel.CellIndex.indexByString("D5"),
+        excel.TextCellValue("Particular"),
+        cellStyle: headerStyle,
+      );
+      sheetObject.updateCell(
+        excel.CellIndex.indexByString("E5"),
+        excel.TextCellValue("Description"),
+        cellStyle: headerStyle,
+      );
+      sheetObject.updateCell(
+        excel.CellIndex.indexByString("F5"),
+        excel.TextCellValue("Credit (Cr.)"),
+        cellStyle: headerStyle,
+      );
+      sheetObject.updateCell(
+        excel.CellIndex.indexByString("G5"),
+        excel.TextCellValue("Debit (Dr.)"),
+        cellStyle: headerStyle,
+      );
+
+      int currentRow = 5;
+      double totalDebit = 0.0;
+      double totalCredit = 0.0;
+
+      // For the Excel report, we want chronological order (Ascending)
+      List<Map<String, dynamic>> excelExportData = List.from(
+        _filteredTransactions,
+      );
+      excelExportData.sort((a, b) {
+        DateTime dateA = DateTime.fromMillisecondsSinceEpoch(0);
+        DateTime dateB = DateTime.fromMillisecondsSinceEpoch(0);
+        try {
+          dateA = DateFormat('dd/MM/yyyy').parse(a['displayDate'] ?? '');
+        } catch (_) {}
+        try {
+          dateB = DateFormat('dd/MM/yyyy').parse(b['displayDate'] ?? '');
+        } catch (_) {}
+        int dateComparison = dateA.compareTo(dateB); // Ascending
+        if (dateComparison != 0) return dateComparison;
+        int idA =
+            int.tryParse(
+              (a['ID'] ?? a['id'] ?? '0').replaceAll(RegExp(r'[^0-9]'), ''),
+            ) ??
+            0;
+        int idB =
+            int.tryParse(
+              (b['ID'] ?? b['id'] ?? '0').replaceAll(RegExp(r'[^0-9]'), ''),
+            ) ??
+            0;
+        return idA.compareTo(idB); // Ascending
+      });
+
+      for (var row in excelExportData) {
+        String debitStr = (row['Debit'] ?? row['debit'] ?? '0').replaceAll(
+          RegExp(r'[^0-9.-]'),
+          '',
+        );
+        String creditStr = (row['Credit'] ?? row['credit'] ?? '0').replaceAll(
+          RegExp(r'[^0-9.-]'),
+          '',
+        );
+
+        double debit = double.tryParse(debitStr) ?? 0.0;
+        double credit = double.tryParse(creditStr) ?? 0.0;
+
+        totalDebit += debit;
+        totalCredit += credit;
+
+        sheetObject.updateCell(
+          excel.CellIndex.indexByColumnRow(
+            columnIndex: 0,
+            rowIndex: currentRow,
+          ),
+          excel.TextCellValue(row['ID'] ?? row['id'] ?? ''),
+          cellStyle: contentStyle,
+        );
+        sheetObject.updateCell(
+          excel.CellIndex.indexByColumnRow(
+            columnIndex: 1,
+            rowIndex: currentRow,
+          ),
+          excel.TextCellValue(row['displayDate'] ?? ''),
+          cellStyle: contentStyle,
+        );
+        sheetObject.updateCell(
+          excel.CellIndex.indexByColumnRow(
+            columnIndex: 2,
+            rowIndex: currentRow,
+          ),
+          excel.TextCellValue(row['EntryType'] ?? row['entryType'] ?? ''),
+          cellStyle: contentStyle,
+        );
+
+        // ONLY the Account/Particular is bold now
+        sheetObject.updateCell(
+          excel.CellIndex.indexByColumnRow(
+            columnIndex: 3,
+            rowIndex: currentRow,
+          ),
+          excel.TextCellValue(row['Account'] ?? row['account'] ?? ''),
+          cellStyle: boldAccountStyle,
+        );
+        // The Description is mapped to the regular contentStyle (unbolded)
+        sheetObject.updateCell(
+          excel.CellIndex.indexByColumnRow(
+            columnIndex: 4,
+            rowIndex: currentRow,
+          ),
+          excel.TextCellValue(row['Description'] ?? row['description'] ?? ''),
+          cellStyle: contentStyle,
+        );
+
+        sheetObject.updateCell(
+          excel.CellIndex.indexByColumnRow(
+            columnIndex: 5,
+            rowIndex: currentRow,
+          ),
+          credit > 0 ? excel.DoubleCellValue(credit) : excel.TextCellValue('-'),
+          cellStyle: currencyStyle,
+        );
+        sheetObject.updateCell(
+          excel.CellIndex.indexByColumnRow(
+            columnIndex: 6,
+            rowIndex: currentRow,
+          ),
+          debit > 0 ? excel.DoubleCellValue(debit) : excel.TextCellValue('-'),
+          cellStyle: currencyStyle,
+        );
+
+        currentRow++;
+      }
+
+      sheetObject.updateCell(
+        excel.CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow),
+        excel.TextCellValue(''),
+        cellStyle: contentStyle,
+      );
+      sheetObject.updateCell(
+        excel.CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: currentRow),
+        excel.TextCellValue(''),
+        cellStyle: contentStyle,
+      );
+      sheetObject.updateCell(
+        excel.CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: currentRow),
+        excel.TextCellValue(''),
+        cellStyle: contentStyle,
+      );
+      sheetObject.updateCell(
+        excel.CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: currentRow),
+        excel.TextCellValue(''),
+        cellStyle: contentStyle,
+      );
+      sheetObject.updateCell(
+        excel.CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: currentRow),
+        excel.TextCellValue('TOTAL'),
+        cellStyle: totalStyle,
+      );
+      sheetObject.updateCell(
+        excel.CellIndex.indexByColumnRow(columnIndex: 5, rowIndex: currentRow),
+        excel.DoubleCellValue(totalCredit),
+        cellStyle: totalStyle,
+      );
+      sheetObject.updateCell(
+        excel.CellIndex.indexByColumnRow(columnIndex: 6, rowIndex: currentRow),
+        excel.DoubleCellValue(totalDebit),
+        cellStyle: totalStyle,
+      );
+
+      var bytes = excelFile.save();
+
+      String defaultFileName = "Ledger_Report.xlsx";
+      if (_selectedAccountFilter != null) {
+        defaultFileName = "${_selectedAccountFilter}_Ledger.xlsx";
+      }
+
+      String? outputFile = await FilePicker.platform.saveFile(
+        dialogTitle: 'Save Ledger Report',
+        fileName: defaultFileName,
+        type: FileType.custom,
+        allowedExtensions: ['xlsx'],
+      );
+
+      if (outputFile != null) {
+        if (!outputFile.endsWith('.xlsx')) outputFile += '.xlsx';
+        File(outputFile)
+          ..createSync(recursive: true)
+          ..writeAsBytesSync(bytes!);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Saved to: $outputFile'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Export Failed: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+    setState(() => _isLoading = false);
   }
 
   void _deleteTransaction(String id) {
@@ -166,18 +536,11 @@ class _LedgerScreenState extends State<LedgerScreen> {
             ),
             onPressed: () async {
               Navigator.pop(context);
-              setState(() {
-                _isLoading = true;
-              });
-
+              setState(() => _isLoading = true);
               try {
                 bool success = await SheetsService.deleteEntry(id);
                 await Future.delayed(const Duration(milliseconds: 500));
-
-                if (!mounted) {
-                  return;
-                }
-
+                if (!mounted) return;
                 if (success) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
@@ -193,16 +556,10 @@ class _LedgerScreenState extends State<LedgerScreen> {
                       backgroundColor: Colors.red,
                     ),
                   );
-                  setState(() {
-                    _isLoading = false;
-                  });
+                  setState(() => _isLoading = false);
                 }
               } catch (e) {
-                if (mounted) {
-                  setState(() {
-                    _isLoading = false;
-                  });
-                }
+                if (mounted) setState(() => _isLoading = false);
               }
             },
             child: const Text('Delete'),
@@ -236,6 +593,11 @@ class _LedgerScreenState extends State<LedgerScreen> {
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
           IconButton(
+            icon: const Icon(Icons.download),
+            tooltip: 'Export Report',
+            onPressed: _exportLedgerToExcel,
+          ),
+          IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: 'Manual Refresh',
             onPressed: _fetchTransactions,
@@ -246,47 +608,108 @@ class _LedgerScreenState extends State<LedgerScreen> {
         children: [
           Padding(
             padding: const EdgeInsets.all(16.0),
-            child: Row(
+            child: Column(
               children: [
-                Expanded(
-                  flex: 2,
-                  child: TextField(
-                    decoration: const InputDecoration(
-                      labelText: 'Search Account or Particulars...',
-                      prefixIcon: Icon(Icons.search),
-                      border: OutlineInputBorder(),
-                    ),
-                    onChanged: (val) {
-                      setState(() {
-                        _searchQuery = val;
-                        _applySearchFilter();
-                      });
-                    },
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  flex: 1,
-                  child: InkWell(
-                    onTap: _selectDateRange,
-                    child: Container(
-                      height: 55,
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.grey.shade400),
-                        borderRadius: BorderRadius.circular(4),
+                Row(
+                  children: [
+                    Expanded(
+                      flex: 2,
+                      child: TextField(
+                        decoration: const InputDecoration(
+                          labelText: 'Search Description or ID...',
+                          prefixIcon: Icon(Icons.search),
+                          border: OutlineInputBorder(),
+                          contentPadding: EdgeInsets.symmetric(horizontal: 12),
+                        ),
+                        onChanged: (val) => setState(() {
+                          _searchQuery = val;
+                          _applySearchFilter();
+                        }),
                       ),
-                      child: Center(
-                        child: Text(
-                          _selectedDateRange == null
-                              ? 'Filter Date'
-                              : '${DateFormat('MMM dd').format(_selectedDateRange!.start)} - ${DateFormat('MMM dd').format(_selectedDateRange!.end)}',
-                          style: const TextStyle(fontWeight: FontWeight.bold),
-                          textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      flex: 1,
+                      child: InkWell(
+                        onTap: _selectDateRange,
+                        child: Container(
+                          height: 50,
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.grey.shade400),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Center(
+                            child: Text(
+                              _selectedDateRange == null
+                                  ? 'Filter Date'
+                                  : '${DateFormat('dd/MM/yyyy').format(_selectedDateRange!.start)} - ${DateFormat('dd/MM/yyyy').format(_selectedDateRange!.end)}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
                         ),
                       ),
                     ),
-                  ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+
+                Row(
+                  children: [
+                    Expanded(
+                      flex: 2,
+                      child: DropdownButtonFormField<String>(
+                        initialValue: _selectedAccountFilter,
+                        decoration: const InputDecoration(
+                          labelText: 'Filter by Particular',
+                          border: OutlineInputBorder(),
+                          contentPadding: EdgeInsets.symmetric(horizontal: 12),
+                        ),
+                        isExpanded: true,
+                        items: [
+                          const DropdownMenuItem(
+                            value: null,
+                            child: Text('All Particulars'),
+                          ),
+                          ..._availableAccounts.map(
+                            (acc) =>
+                                DropdownMenuItem(value: acc, child: Text(acc)),
+                          ),
+                        ],
+                        onChanged: (val) => setState(() {
+                          _selectedAccountFilter = val;
+                          _applySearchFilter();
+                        }),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      flex: 1,
+                      child: DropdownButtonFormField<String>(
+                        initialValue: _selectedTypeFilter,
+                        decoration: const InputDecoration(
+                          labelText: 'Entry Type',
+                          border: OutlineInputBorder(),
+                          contentPadding: EdgeInsets.symmetric(horizontal: 12),
+                        ),
+                        items: ['All', 'Rokad', 'Jama-Kharchi']
+                            .map(
+                              (type) => DropdownMenuItem(
+                                value: type,
+                                child: Text(type),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (val) => setState(() {
+                          _selectedTypeFilter = val!;
+                          _applySearchFilter();
+                        }),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -295,7 +718,7 @@ class _LedgerScreenState extends State<LedgerScreen> {
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
                 : _filteredTransactions.isEmpty
-                ? const Center(child: Text('No entries match your search.'))
+                ? const Center(child: Text('No entries match your filters.'))
                 : ListView(
                     padding: const EdgeInsets.symmetric(horizontal: 16.0),
                     children: [
@@ -329,13 +752,13 @@ class _LedgerScreenState extends State<LedgerScreen> {
                           ),
                           DataColumn(
                             label: Text(
-                              'Account',
+                              'Particular',
                               style: TextStyle(fontWeight: FontWeight.bold),
                             ),
                           ),
                           DataColumn(
                             label: Text(
-                              'Particulars',
+                              'Description',
                               style: TextStyle(fontWeight: FontWeight.bold),
                             ),
                           ),
@@ -345,14 +768,14 @@ class _LedgerScreenState extends State<LedgerScreen> {
                               style: TextStyle(fontWeight: FontWeight.bold),
                             ),
                             numeric: true,
-                          ), // SWAPPED!
+                          ),
                           DataColumn(
                             label: Text(
                               'Debit',
                               style: TextStyle(fontWeight: FontWeight.bold),
                             ),
                             numeric: true,
-                          ), // SWAPPED!
+                          ),
                           DataColumn(
                             label: Text(
                               'Actions',
@@ -381,16 +804,8 @@ class LedgerDataSource extends DataTableSource {
 
   @override
   DataRow? getRow(int index) {
-    if (index >= _data.length) {
-      return null;
-    }
+    if (index >= _data.length) return null;
     final row = _data[index];
-
-    String id = row['ID'] ?? row['id'] ?? '';
-    String date = row['displayDate'] ?? '';
-    String type = row['EntryType'] ?? row['entryType'] ?? '';
-    String account = row['Account'] ?? row['account'] ?? '';
-    String desc = row['Description'] ?? row['description'] ?? '';
 
     String debitStr = (row['Debit'] ?? row['debit'] ?? '0').replaceAll(
       RegExp(r'[^0-9.-]'),
@@ -403,17 +818,13 @@ class LedgerDataSource extends DataTableSource {
 
     return DataRow(
       cells: [
-        DataCell(Text(id)),
-        DataCell(Text(date)),
-        DataCell(Text(type)),
-        DataCell(Text(account)),
-        DataCell(Text(desc)),
-        DataCell(
-          Text('₹$creditStr'),
-        ), // SWAPPED: Credit is mapped to the new column
-        DataCell(
-          Text('₹$debitStr'),
-        ), // SWAPPED: Debit is mapped to the new column
+        DataCell(Text(row['ID'] ?? row['id'] ?? '')),
+        DataCell(Text(row['displayDate'] ?? '')),
+        DataCell(Text(row['EntryType'] ?? row['entryType'] ?? '')),
+        DataCell(Text(row['Account'] ?? row['account'] ?? '')),
+        DataCell(Text(row['Description'] ?? row['description'] ?? '')),
+        DataCell(Text('₹$creditStr')),
+        DataCell(Text('₹$debitStr')),
         DataCell(
           Row(
             mainAxisSize: MainAxisSize.min,
@@ -424,7 +835,7 @@ class LedgerDataSource extends DataTableSource {
               ),
               IconButton(
                 icon: const Icon(Icons.delete, color: Colors.red, size: 20),
-                onPressed: () => onDelete(id),
+                onPressed: () => onDelete(row['ID'] ?? row['id'] ?? ''),
               ),
             ],
           ),
@@ -484,7 +895,6 @@ class _EditTransactionDialogState extends State<_EditTransactionDialog> {
       text: cleanCredit == '0' ? '' : cleanCredit,
     );
 
-    // SMART MAPPER: Converts old 'Cash' and 'Journal' entries to the new format automatically
     String tempType =
         widget.transaction['EntryType'] ??
         widget.transaction['entryType'] ??
@@ -500,20 +910,21 @@ class _EditTransactionDialogState extends State<_EditTransactionDialog> {
     }
     _entryType = tempType;
 
-    _selectedDate =
-        DateTime.tryParse(widget.transaction['displayDate'] ?? '') ??
-        DateTime.now();
+    try {
+      _selectedDate = DateFormat(
+        'dd/MM/yyyy',
+      ).parse(widget.transaction['displayDate'] ?? '');
+    } catch (_) {
+      _selectedDate = DateTime.now();
+    }
   }
 
   Future<void> _updateEntry() async {
     if (_formKey.currentState!.validate()) {
-      setState(() {
-        _isSaving = true;
-      });
-
+      setState(() => _isSaving = true);
       Map<String, dynamic> updatedEntry = {
         'id': widget.transaction['ID'] ?? widget.transaction['id'],
-        'date': DateFormat('yyyy-MM-dd').format(_selectedDate),
+        'date': DateFormat('dd/MM/yyyy').format(_selectedDate),
         'entryType': _entryType,
         'account':
             widget.transaction['Account'] ?? widget.transaction['account'],
@@ -526,18 +937,12 @@ class _EditTransactionDialogState extends State<_EditTransactionDialog> {
         updatedEntry['id'],
         updatedEntry,
       );
-
-      if (!mounted) {
-        return;
-      }
-
+      if (!mounted) return;
       if (success) {
         Navigator.pop(context);
         widget.onSaved();
       } else {
-        setState(() {
-          _isSaving = false;
-        });
+        setState(() => _isSaving = false);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Update failed.'),
@@ -572,13 +977,11 @@ class _EditTransactionDialogState extends State<_EditTransactionDialog> {
                           lastDate: DateTime(2100),
                         );
                         if (picked != null) {
-                          setState(() {
-                            _selectedDate = picked;
-                          });
+                          setState(() => _selectedDate = picked);
                         }
                       },
                       child: Text(
-                        DateFormat('yyyy-MM-dd').format(_selectedDate),
+                        DateFormat('dd/MM/yyyy').format(_selectedDate),
                       ),
                     ),
                   ),
@@ -586,17 +989,12 @@ class _EditTransactionDialogState extends State<_EditTransactionDialog> {
                   Expanded(
                     child: DropdownButtonFormField<String>(
                       initialValue: _entryType,
-                      // STRICTLY TWO TRADITIONAL OPTIONS
                       items: ['Rokad', 'Jama-Kharchi']
                           .map(
                             (v) => DropdownMenuItem(value: v, child: Text(v)),
                           )
                           .toList(),
-                      onChanged: (val) {
-                        setState(() {
-                          _entryType = val!;
-                        });
-                      },
+                      onChanged: (val) => setState(() => _entryType = val!),
                     ),
                   ),
                 ],
@@ -604,12 +1002,9 @@ class _EditTransactionDialogState extends State<_EditTransactionDialog> {
               const SizedBox(height: 12),
               TextFormField(
                 controller: _descController,
-                decoration: const InputDecoration(
-                  labelText: 'Particulars/Description',
-                ),
+                decoration: const InputDecoration(labelText: 'Description'),
               ),
               const SizedBox(height: 12),
-              // SWAPPED: Credit is edited before Debit
               TextFormField(
                 controller: _creditController,
                 keyboardType: TextInputType.number,

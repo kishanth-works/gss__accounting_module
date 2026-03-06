@@ -96,9 +96,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
           if (rowDate != null && _selectedDateRange != null) {
             if (rowDate.isBefore(_selectedDateRange!.start) ||
-                rowDate.isAfter(
-                  _selectedDateRange!.end.add(const Duration(days: 1)),
-                )) {
+                rowDate.isAfter(_selectedDateRange!.end)) {
               continue;
             }
           }
@@ -308,7 +306,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       String dateRangeStr = "All Time";
       if (_selectedDateRange != null) {
         dateRangeStr =
-            "${DateFormat('dd MMM yyyy').format(_selectedDateRange!.start)} to ${DateFormat('dd MMM yyyy').format(_selectedDateRange!.end)}";
+            "${DateFormat('dd/MM/yyyy').format(_selectedDateRange!.start)} to ${DateFormat('dd/MM/yyyy').format(_selectedDateRange!.end)}";
       }
       sheetObject.updateCell(
         excel.CellIndex.indexByString("A3"),
