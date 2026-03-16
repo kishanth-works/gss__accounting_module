@@ -78,7 +78,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
         try {
           String dateStr = row['Date'] ?? row['date'] ?? '';
           DateTime? rowDate;
+
           if (dateStr.isNotEmpty) {
+            // 1. Handle Excel serial numbers (e.g., 45123)
             if (int.tryParse(dateStr) != null && dateStr.length == 5) {
               rowDate = DateTime(
                 1899,
@@ -86,18 +88,50 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 30,
               ).add(Duration(days: int.parse(dateStr)));
             } else {
+              // 2. The Ultimate Fallback Parser to catch ALL formats safely
               try {
-                rowDate = DateFormat('yyyy-MM-dd').parse(dateStr);
+                rowDate = DateFormat('dd/MM/yyyy').parseStrict(dateStr);
               } catch (_) {
-                rowDate = DateTime.tryParse(dateStr);
+                try {
+                  rowDate = DateFormat('MM/dd/yyyy').parseStrict(dateStr);
+                } catch (_) {
+                  try {
+                    rowDate = DateFormat('yyyy-MM-dd').parseStrict(dateStr);
+                  } catch (_) {
+                    rowDate = DateTime.tryParse(dateStr);
+                  }
+                }
               }
             }
           }
 
-          if (rowDate != null && _selectedDateRange != null) {
-            if (rowDate.isBefore(_selectedDateRange!.start) ||
-                rowDate.isAfter(_selectedDateRange!.end)) {
+          // 3. The Ironclad Date Filter
+          if (_selectedDateRange != null) {
+            // If the date is totally unreadable, skip it so it doesn't bleed into the report
+            if (rowDate == null) {
               continue;
+            }
+
+            // Normalize everything to exactly midnight to completely prevent off-by-one errors
+            DateTime pureRowDate = DateTime(
+              rowDate.year,
+              rowDate.month,
+              rowDate.day,
+            );
+            DateTime pureStart = DateTime(
+              _selectedDateRange!.start.year,
+              _selectedDateRange!.start.month,
+              _selectedDateRange!.start.day,
+            );
+            DateTime pureEnd = DateTime(
+              _selectedDateRange!.end.year,
+              _selectedDateRange!.end.month,
+              _selectedDateRange!.end.day,
+            );
+
+            if (pureRowDate.isBefore(pureStart) ||
+                pureRowDate.isAfter(pureEnd)) {
+              continue; // Exclude this entry!
             }
           }
 

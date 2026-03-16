@@ -924,7 +924,7 @@ class _EditTransactionDialogState extends State<_EditTransactionDialog> {
       setState(() => _isSaving = true);
       Map<String, dynamic> updatedEntry = {
         'id': widget.transaction['ID'] ?? widget.transaction['id'],
-        'date': DateFormat('dd/MM/yyyy').format(_selectedDate),
+        'date': DateFormat('MM/dd/yyyy').format(_selectedDate),
         'entryType': _entryType,
         'account':
             widget.transaction['Account'] ?? widget.transaction['account'],

@@ -191,7 +191,7 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
       final entryData = {
         'id': generateId,
         'date': DateFormat(
-          'dd/MM/yyyy',
+          'MM/dd/yyyy',
         ).format(_selectedDate), // NEW: Strictly saving as dd/MM/yyyy
         'entryType': _entryType,
         'account': _selectedAccount,
