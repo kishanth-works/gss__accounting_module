@@ -5,6 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:excel/excel.dart' as excel;
 import 'package:file_picker/file_picker.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 import '../services/sheets_service.dart';
 
 class LedgerScreen extends StatefulWidget {
@@ -22,7 +25,7 @@ class _LedgerScreenState extends State<LedgerScreen> {
   List<Map<String, dynamic>> _filteredTransactions = [];
 
   String _searchQuery = '';
-  String? _selectedAccountFilter;
+  final List<String> _selectedAccountsFilter = [];
   String _selectedTypeFilter = 'All';
   List<String> _availableAccounts = [];
 
@@ -33,7 +36,9 @@ class _LedgerScreenState extends State<LedgerScreen> {
   }
 
   Future<void> _fetchTransactions({bool isSilent = false}) async {
-    if (!isSilent) setState(() => _isLoading = true);
+    if (!isSilent) {
+      setState(() => _isLoading = true);
+    }
 
     try {
       final rawRows = await SheetsService.getAllEntries();
@@ -53,20 +58,40 @@ class _LedgerScreenState extends State<LedgerScreen> {
               ).add(Duration(days: int.parse(dateStr)));
             } else {
               try {
-                rowDate = DateFormat('dd/MM/yyyy').parse(dateStr);
+                rowDate = DateFormat('dd/MM/yyyy').parseStrict(dateStr);
               } catch (_) {
                 try {
-                  rowDate = DateFormat('yyyy-MM-dd').parse(dateStr);
+                  rowDate = DateFormat('MM/dd/yyyy').parseStrict(dateStr);
                 } catch (_) {
-                  rowDate = DateTime.tryParse(dateStr);
+                  try {
+                    rowDate = DateFormat('yyyy-MM-dd').parseStrict(dateStr);
+                  } catch (_) {
+                    rowDate = DateTime.tryParse(dateStr);
+                  }
                 }
               }
             }
           }
 
           if (_selectedDateRange != null && rowDate != null) {
-            if (rowDate.isBefore(_selectedDateRange!.start) ||
-                rowDate.isAfter(_selectedDateRange!.end)) {
+            DateTime pureRowDate = DateTime(
+              rowDate.year,
+              rowDate.month,
+              rowDate.day,
+            );
+            DateTime pureStart = DateTime(
+              _selectedDateRange!.start.year,
+              _selectedDateRange!.start.month,
+              _selectedDateRange!.start.day,
+            );
+            DateTime pureEnd = DateTime(
+              _selectedDateRange!.end.year,
+              _selectedDateRange!.end.month,
+              _selectedDateRange!.end.day,
+            );
+
+            if (pureRowDate.isBefore(pureStart) ||
+                pureRowDate.isAfter(pureEnd)) {
               continue;
             }
           }
@@ -78,7 +103,9 @@ class _LedgerScreenState extends State<LedgerScreen> {
           }
 
           String acc = row['Account'] ?? row['account'] ?? '';
-          if (acc.isNotEmpty) accountsSet.add(acc);
+          if (acc.isNotEmpty) {
+            accountsSet.add(acc);
+          }
 
           parsedRows.add(row);
         } catch (e) {
@@ -86,7 +113,6 @@ class _LedgerScreenState extends State<LedgerScreen> {
         }
       }
 
-      // FIXED: Sort UI Date DESCENDING (Newest first), then ID DESCENDING
       parsedRows.sort((a, b) {
         DateTime dateA = DateTime.fromMillisecondsSinceEpoch(0);
         DateTime dateB = DateTime.fromMillisecondsSinceEpoch(0);
@@ -97,8 +123,10 @@ class _LedgerScreenState extends State<LedgerScreen> {
           dateB = DateFormat('dd/MM/yyyy').parse(b['displayDate'] ?? '');
         } catch (_) {}
 
-        int dateComparison = dateB.compareTo(dateA); // Descending
-        if (dateComparison != 0) return dateComparison;
+        int dateComparison = dateB.compareTo(dateA);
+        if (dateComparison != 0) {
+          return dateComparison;
+        }
 
         int idA =
             int.tryParse(
@@ -110,21 +138,22 @@ class _LedgerScreenState extends State<LedgerScreen> {
               (b['ID'] ?? b['id'] ?? '0').replaceAll(RegExp(r'[^0-9]'), ''),
             ) ??
             0;
-        return idB.compareTo(idA); // Descending
+        return idB.compareTo(idA);
       });
 
       setState(() {
         _allTransactions = parsedRows;
         _availableAccounts = accountsSet.toList()..sort();
-        if (_selectedAccountFilter != null &&
-            !_availableAccounts.contains(_selectedAccountFilter)) {
-          _selectedAccountFilter = null;
-        }
+        _selectedAccountsFilter.removeWhere(
+          (acc) => !_availableAccounts.contains(acc),
+        );
         _applySearchFilter();
         _isLoading = false;
       });
     } catch (e) {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -143,7 +172,8 @@ class _LedgerScreenState extends State<LedgerScreen> {
           desc.contains(query) ||
           id.contains(query);
       bool matchesAccount =
-          _selectedAccountFilter == null || account == _selectedAccountFilter;
+          _selectedAccountsFilter.isEmpty ||
+          _selectedAccountsFilter.contains(account);
       bool matchesType =
           _selectedTypeFilter == 'All' || type == _selectedTypeFilter;
 
@@ -162,6 +192,313 @@ class _LedgerScreenState extends State<LedgerScreen> {
       setState(() => _selectedDateRange = picked);
       _fetchTransactions();
     }
+  }
+
+  void _showMultiSelectDialog() {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Select Particulars'),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: _availableAccounts.isEmpty
+                    ? const Text("No particulars found.")
+                    : ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: _availableAccounts.length,
+                        itemBuilder: (context, index) {
+                          final account = _availableAccounts[index];
+                          return CheckboxListTile(
+                            title: Text(account),
+                            value: _selectedAccountsFilter.contains(account),
+                            onChanged: (bool? value) {
+                              setDialogState(() {
+                                if (value == true) {
+                                  _selectedAccountsFilter.add(account);
+                                } else {
+                                  _selectedAccountsFilter.remove(account);
+                                }
+                              });
+                            },
+                          );
+                        },
+                      ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    setDialogState(() {
+                      _selectedAccountsFilter.clear();
+                    });
+                  },
+                  child: const Text('Clear All'),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Theme.of(context).colorScheme.primary,
+                    foregroundColor: Colors.white,
+                  ),
+                  onPressed: () {
+                    Navigator.pop(context);
+                    setState(() {
+                      _applySearchFilter();
+                    });
+                  },
+                  child: const Text('Apply Filter'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _printLedgerDirectly() async {
+    final pdf = pw.Document();
+
+    // Download safe Google Fonts (Regular and Bold) to prevent Helvetica crashes
+    final font = await PdfGoogleFonts.notoSansRegular();
+    final boldFont = await PdfGoogleFonts.notoSansBold();
+
+    List<Map<String, dynamic>> printData = List.from(_filteredTransactions);
+
+    // Deep Sort - Ascending by Date, then Ascending by ID
+    printData.sort((a, b) {
+      DateTime dateA = DateTime.fromMillisecondsSinceEpoch(0);
+      DateTime dateB = DateTime.fromMillisecondsSinceEpoch(0);
+      try {
+        dateA = DateFormat('dd/MM/yyyy').parse(a['displayDate'] ?? '');
+      } catch (_) {}
+      try {
+        dateB = DateFormat('dd/MM/yyyy').parse(b['displayDate'] ?? '');
+      } catch (_) {}
+
+      int dateComparison = dateA.compareTo(dateB);
+      if (dateComparison != 0) {
+        return dateComparison;
+      }
+
+      int idA =
+          int.tryParse(
+            (a['ID'] ?? a['id'] ?? '0').replaceAll(RegExp(r'[^0-9]'), ''),
+          ) ??
+          0;
+      int idB =
+          int.tryParse(
+            (b['ID'] ?? b['id'] ?? '0').replaceAll(RegExp(r'[^0-9]'), ''),
+          ) ??
+          0;
+      return idA.compareTo(idB);
+    });
+
+    // UPDATED TITLE LOGIC
+    String reportName = "Ledger Report";
+    if (_selectedTypeFilter != 'All') {
+      reportName = "$_selectedTypeFilter Report";
+    }
+    if (_selectedAccountsFilter.isNotEmpty) {
+      if (_selectedAccountsFilter.length == 1) {
+        reportName =
+            "Particular Ledger: ${_selectedAccountsFilter.first.toUpperCase()}";
+      } else {
+        reportName =
+            "Combined Ledger (${_selectedAccountsFilter.length} Accounts)";
+      }
+    }
+    if (_selectedDateRange != null &&
+        _selectedDateRange!.start == _selectedDateRange!.end) {
+      reportName = "CashBook";
+    }
+
+    String dateRangeStr = "Date: All Time";
+    if (_selectedDateRange != null) {
+      dateRangeStr =
+          "Date: ${DateFormat('dd/MM/yyyy').format(_selectedDateRange!.start)} to ${DateFormat('dd/MM/yyyy').format(_selectedDateRange!.end)}";
+    }
+
+    double tDebit = 0;
+    double tCredit = 0;
+    final List<List<dynamic>> tableData = [];
+
+    // Adding all 7 columns to perfectly match the Excel sheet
+    for (var row in printData) {
+      String id = row['ID'] ?? row['id'] ?? '';
+      String type = row['EntryType'] ?? row['entryType'] ?? '';
+      String acc = row['Account'] ?? row['account'] ?? '';
+      String desc = row['Description'] ?? row['description'] ?? '';
+      double c =
+          double.tryParse(
+            (row['Credit'] ?? row['credit'] ?? '0').toString().replaceAll(
+              RegExp(r'[^0-9.-]'),
+              '',
+            ),
+          ) ??
+          0;
+      double d =
+          double.tryParse(
+            (row['Debit'] ?? row['debit'] ?? '0').toString().replaceAll(
+              RegExp(r'[^0-9.-]'),
+              '',
+            ),
+          ) ??
+          0;
+
+      tCredit += c;
+      tDebit += d;
+
+      tableData.add([
+        id,
+        row['displayDate'] ?? '',
+        type,
+        acc,
+        desc,
+        c > 0 ? c.toStringAsFixed(2) : '-',
+        d > 0 ? d.toStringAsFixed(2) : '-',
+      ]);
+    }
+
+    final boldStyle = pw.TextStyle(
+      fontWeight: pw.FontWeight.bold,
+      color: PdfColors.black,
+    );
+
+    tableData.add([
+      '',
+      '',
+      '',
+      '',
+      pw.Text('TOTAL', style: boldStyle),
+      pw.Text(tCredit.toStringAsFixed(2), style: boldStyle),
+      pw.Text(tDebit.toStringAsFixed(2), style: boldStyle),
+    ]);
+
+    tableData.add([
+      '',
+      '',
+      '',
+      '',
+      pw.Text('CLOSING BALANCE', style: boldStyle),
+      pw.Text(
+        (tDebit - tCredit) < 0 ? (tCredit - tDebit).toStringAsFixed(2) : '-',
+        style: boldStyle,
+      ),
+      pw.Text(
+        (tDebit - tCredit) > 0 ? (tDebit - tCredit).toStringAsFixed(2) : '-',
+        style: boldStyle,
+      ),
+    ]);
+
+    pdf.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4.landscape,
+        margin: const pw.EdgeInsets.only(
+          top: 70,
+          bottom: 30,
+          left: 30,
+          right: 30,
+        ),
+        theme: pw.ThemeData.withFont(base: font, bold: boldFont),
+
+        header: (pw.Context context) {
+          return pw.Container(
+            width: double.infinity,
+            alignment: pw.Alignment.center,
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.center,
+              children: [
+                pw.Text(
+                  "Gramodyog Seva Sansthan",
+                  style: pw.TextStyle(
+                    fontSize: 18,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+                pw.Text(
+                  reportName,
+                  style: pw.TextStyle(
+                    fontSize: 14,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+                pw.Text(
+                  dateRangeStr,
+                  style: pw.TextStyle(
+                    fontSize: 12,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+                pw.SizedBox(height: 16),
+              ],
+            ),
+          );
+        },
+
+        footer: (pw.Context context) {
+          return pw.Container(
+            alignment: pw.Alignment.centerRight,
+            margin: const pw.EdgeInsets.only(top: 10),
+            child: pw.Text(
+              'Page ${context.pageNumber} of ${context.pagesCount}',
+              style: const pw.TextStyle(color: PdfColors.grey600, fontSize: 10),
+            ),
+          );
+        },
+
+        build: (context) => [
+          pw.TableHelper.fromTextArray(
+            border: pw.TableBorder.all(color: PdfColors.black, width: 1),
+            headerStyle: pw.TextStyle(
+              fontWeight: pw.FontWeight.bold,
+              color: PdfColors.black,
+            ),
+            headerDecoration: const pw.BoxDecoration(color: PdfColors.white),
+            cellStyle: const pw.TextStyle(color: PdfColors.black),
+            rowDecoration: const pw.BoxDecoration(color: PdfColors.white),
+            cellHeight: 22,
+
+            cellAlignments: {
+              0: pw.Alignment.centerLeft,
+              1: pw.Alignment.centerLeft,
+              2: pw.Alignment.centerLeft,
+              3: pw.Alignment.centerLeft,
+              4: pw.Alignment.centerLeft,
+              5: pw.Alignment.centerRight,
+              6: pw.Alignment.centerRight,
+            },
+
+            headers: [
+              'ID',
+              'Date',
+              'Type',
+              'Particular',
+              'Description',
+              'Credit (Cr.)',
+              'Debit (Dr.)',
+            ],
+            columnWidths: {
+              0: const pw.FlexColumnWidth(0.8),
+              1: const pw.FlexColumnWidth(1.2),
+              2: const pw.FlexColumnWidth(1.2),
+              3: const pw.FlexColumnWidth(2.5),
+              4: const pw.FlexColumnWidth(3.0),
+              5: const pw.FlexColumnWidth(1.5),
+              6: const pw.FlexColumnWidth(1.5),
+            },
+            data: tableData,
+          ),
+        ],
+      ),
+    );
+
+    await Printing.layoutPdf(
+      onLayout: (PdfPageFormat format) async => pdf.save(),
+      name: 'Ledger_Report.pdf',
+      format: PdfPageFormat.a4.landscape,
+    );
   }
 
   Future<void> _exportLedgerToExcel() async {
@@ -203,8 +540,6 @@ class _LedgerScreenState extends State<LedgerScreen> {
         topBorder: borderStyle,
         bottomBorder: borderStyle,
       );
-
-      // Separate styles for normal content and bold accounts
       var contentStyle = excel.CellStyle(
         fontFamily: 'Times New Roman',
         fontSize: 12,
@@ -222,7 +557,6 @@ class _LedgerScreenState extends State<LedgerScreen> {
         topBorder: borderStyle,
         bottomBorder: borderStyle,
       );
-
       var currencyStyle = excel.CellStyle(
         fontFamily: 'Times New Roman',
         fontSize: 12,
@@ -255,17 +589,23 @@ class _LedgerScreenState extends State<LedgerScreen> {
         cellStyle: titleStyle,
       );
 
-      String reportName = "Transaction Ledger Report";
+      // UPDATED TITLE LOGIC
+      String reportName = "Ledger Report";
       if (_selectedTypeFilter != 'All') {
         reportName = "$_selectedTypeFilter Report";
       }
-      if (_selectedAccountFilter != null) {
-        reportName =
-            "Particular Ledger: ${_selectedAccountFilter!.toUpperCase()}";
+      if (_selectedAccountsFilter.isNotEmpty) {
+        if (_selectedAccountsFilter.length == 1) {
+          reportName =
+              "Particular Ledger: ${_selectedAccountsFilter.first.toUpperCase()}";
+        } else {
+          reportName =
+              "Combined Ledger (${_selectedAccountsFilter.length} Accounts)";
+        }
       }
       if (_selectedDateRange != null &&
           _selectedDateRange!.start == _selectedDateRange!.end) {
-        reportName = "Roznamcha (Daily Cash Book)";
+        reportName = "CashBook";
       }
 
       sheetObject.merge(
@@ -333,7 +673,6 @@ class _LedgerScreenState extends State<LedgerScreen> {
       double totalDebit = 0.0;
       double totalCredit = 0.0;
 
-      // For the Excel report, we want chronological order (Ascending)
       List<Map<String, dynamic>> excelExportData = List.from(
         _filteredTransactions,
       );
@@ -346,8 +685,10 @@ class _LedgerScreenState extends State<LedgerScreen> {
         try {
           dateB = DateFormat('dd/MM/yyyy').parse(b['displayDate'] ?? '');
         } catch (_) {}
-        int dateComparison = dateA.compareTo(dateB); // Ascending
-        if (dateComparison != 0) return dateComparison;
+        int dateComparison = dateA.compareTo(dateB);
+        if (dateComparison != 0) {
+          return dateComparison;
+        }
         int idA =
             int.tryParse(
               (a['ID'] ?? a['id'] ?? '0').replaceAll(RegExp(r'[^0-9]'), ''),
@@ -358,7 +699,7 @@ class _LedgerScreenState extends State<LedgerScreen> {
               (b['ID'] ?? b['id'] ?? '0').replaceAll(RegExp(r'[^0-9]'), ''),
             ) ??
             0;
-        return idA.compareTo(idB); // Ascending
+        return idA.compareTo(idB);
       });
 
       for (var row in excelExportData) {
@@ -401,8 +742,6 @@ class _LedgerScreenState extends State<LedgerScreen> {
           excel.TextCellValue(row['EntryType'] ?? row['entryType'] ?? ''),
           cellStyle: contentStyle,
         );
-
-        // ONLY the Account/Particular is bold now
         sheetObject.updateCell(
           excel.CellIndex.indexByColumnRow(
             columnIndex: 3,
@@ -411,7 +750,6 @@ class _LedgerScreenState extends State<LedgerScreen> {
           excel.TextCellValue(row['Account'] ?? row['account'] ?? ''),
           cellStyle: boldAccountStyle,
         );
-        // The Description is mapped to the regular contentStyle (unbolded)
         sheetObject.updateCell(
           excel.CellIndex.indexByColumnRow(
             columnIndex: 4,
@@ -420,7 +758,6 @@ class _LedgerScreenState extends State<LedgerScreen> {
           excel.TextCellValue(row['Description'] ?? row['description'] ?? ''),
           cellStyle: contentStyle,
         );
-
         sheetObject.updateCell(
           excel.CellIndex.indexByColumnRow(
             columnIndex: 5,
@@ -461,6 +798,7 @@ class _LedgerScreenState extends State<LedgerScreen> {
         excel.TextCellValue(''),
         cellStyle: contentStyle,
       );
+
       sheetObject.updateCell(
         excel.CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: currentRow),
         excel.TextCellValue('TOTAL'),
@@ -477,12 +815,83 @@ class _LedgerScreenState extends State<LedgerScreen> {
         cellStyle: totalStyle,
       );
 
+      currentRow++;
+      double balance = totalDebit - totalCredit;
+
+      sheetObject.updateCell(
+        excel.CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: currentRow),
+        excel.TextCellValue('CLOSING BALANCE'),
+        cellStyle: totalStyle,
+      );
+
+      if (balance < 0) {
+        sheetObject.updateCell(
+          excel.CellIndex.indexByColumnRow(
+            columnIndex: 5,
+            rowIndex: currentRow,
+          ),
+          excel.DoubleCellValue(balance.abs()),
+          cellStyle: totalStyle,
+        );
+        sheetObject.updateCell(
+          excel.CellIndex.indexByColumnRow(
+            columnIndex: 6,
+            rowIndex: currentRow,
+          ),
+          excel.TextCellValue('-'),
+          cellStyle: totalStyle,
+        );
+      } else if (balance > 0) {
+        sheetObject.updateCell(
+          excel.CellIndex.indexByColumnRow(
+            columnIndex: 5,
+            rowIndex: currentRow,
+          ),
+          excel.TextCellValue('-'),
+          cellStyle: totalStyle,
+        );
+        sheetObject.updateCell(
+          excel.CellIndex.indexByColumnRow(
+            columnIndex: 6,
+            rowIndex: currentRow,
+          ),
+          excel.DoubleCellValue(balance),
+          cellStyle: totalStyle,
+        );
+      } else {
+        sheetObject.updateCell(
+          excel.CellIndex.indexByColumnRow(
+            columnIndex: 5,
+            rowIndex: currentRow,
+          ),
+          excel.TextCellValue('-'),
+          cellStyle: totalStyle,
+        );
+        sheetObject.updateCell(
+          excel.CellIndex.indexByColumnRow(
+            columnIndex: 6,
+            rowIndex: currentRow,
+          ),
+          excel.TextCellValue('-'),
+          cellStyle: totalStyle,
+        );
+      }
+
       var bytes = excelFile.save();
 
       String defaultFileName = "Ledger_Report.xlsx";
-      if (_selectedAccountFilter != null) {
-        defaultFileName = "${_selectedAccountFilter}_Ledger.xlsx";
+      if (_selectedAccountsFilter.isNotEmpty) {
+        if (_selectedAccountsFilter.length == 1) {
+          defaultFileName = "${_selectedAccountsFilter.first}_Ledger.xlsx";
+        } else {
+          defaultFileName = "Combined_Ledger_Report.xlsx";
+        }
       }
+
+      defaultFileName = defaultFileName.replaceAll(
+        RegExp(r'[<>:"/\\|?*]'),
+        '_',
+      );
 
       String? outputFile = await FilePicker.platform.saveFile(
         dialogTitle: 'Save Ledger Report',
@@ -492,7 +901,9 @@ class _LedgerScreenState extends State<LedgerScreen> {
       );
 
       if (outputFile != null) {
-        if (!outputFile.endsWith('.xlsx')) outputFile += '.xlsx';
+        if (!outputFile.endsWith('.xlsx')) {
+          outputFile += '.xlsx';
+        }
         File(outputFile)
           ..createSync(recursive: true)
           ..writeAsBytesSync(bytes!);
@@ -540,7 +951,9 @@ class _LedgerScreenState extends State<LedgerScreen> {
               try {
                 bool success = await SheetsService.deleteEntry(id);
                 await Future.delayed(const Duration(milliseconds: 500));
-                if (!mounted) return;
+                if (!mounted) {
+                  return;
+                }
                 if (success) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
@@ -559,7 +972,9 @@ class _LedgerScreenState extends State<LedgerScreen> {
                   setState(() => _isLoading = false);
                 }
               } catch (e) {
-                if (mounted) setState(() => _isLoading = false);
+                if (mounted) {
+                  setState(() => _isLoading = false);
+                }
               }
             },
             child: const Text('Delete'),
@@ -593,8 +1008,13 @@ class _LedgerScreenState extends State<LedgerScreen> {
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
           IconButton(
+            icon: const Icon(Icons.print),
+            tooltip: 'Print Ledger directly',
+            onPressed: _printLedgerDirectly,
+          ),
+          IconButton(
             icon: const Icon(Icons.download),
-            tooltip: 'Export Report',
+            tooltip: 'Export Report to Excel',
             onPressed: _exportLedgerToExcel,
           ),
           IconButton(
@@ -634,21 +1054,44 @@ class _LedgerScreenState extends State<LedgerScreen> {
                         onTap: _selectDateRange,
                         child: Container(
                           height: 50,
-                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
                           decoration: BoxDecoration(
                             border: Border.all(color: Colors.grey.shade400),
                             borderRadius: BorderRadius.circular(4),
                           ),
-                          child: Center(
-                            child: Text(
-                              _selectedDateRange == null
-                                  ? 'Filter Date'
-                                  : '${DateFormat('dd/MM/yyyy').format(_selectedDateRange!.start)} - ${DateFormat('dd/MM/yyyy').format(_selectedDateRange!.end)}',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  _selectedDateRange == null
+                                      ? 'Filter Date'
+                                      : '${DateFormat('dd/MM/yy').format(_selectedDateRange!.start)} - ${DateFormat('dd/MM/yy').format(_selectedDateRange!.end)}',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 13,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               ),
-                              textAlign: TextAlign.center,
-                            ),
+                              // THE RED 'X' CLEAR BUTTON
+                              if (_selectedDateRange != null)
+                                InkWell(
+                                  onTap: () {
+                                    setState(() => _selectedDateRange = null);
+                                    _fetchTransactions(); // Reloads all data instantly
+                                  },
+                                  child: const Padding(
+                                    padding: EdgeInsets.only(left: 4.0),
+                                    child: Icon(
+                                      Icons.cancel,
+                                      color: Colors.redAccent,
+                                      size: 20,
+                                    ),
+                                  ),
+                                ),
+                            ],
                           ),
                         ),
                       ),
@@ -656,33 +1099,45 @@ class _LedgerScreenState extends State<LedgerScreen> {
                   ],
                 ),
                 const SizedBox(height: 12),
-
                 Row(
                   children: [
                     Expanded(
                       flex: 2,
-                      child: DropdownButtonFormField<String>(
-                        initialValue: _selectedAccountFilter,
-                        decoration: const InputDecoration(
-                          labelText: 'Filter by Particular',
-                          border: OutlineInputBorder(),
-                          contentPadding: EdgeInsets.symmetric(horizontal: 12),
+                      child: InkWell(
+                        onTap: _showMultiSelectDialog,
+                        child: Container(
+                          height: 50,
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.grey.shade400),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  _selectedAccountsFilter.isEmpty
+                                      ? 'Filter by Particulars (All)'
+                                      : _selectedAccountsFilter.length == 1
+                                      ? _selectedAccountsFilter.first
+                                      : '${_selectedAccountsFilter.length} Particulars Selected',
+                                  style: TextStyle(
+                                    color: _selectedAccountsFilter.isEmpty
+                                        ? Colors.grey.shade700
+                                        : Colors.black,
+                                    fontSize: 16,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              const Icon(
+                                Icons.arrow_drop_down,
+                                color: Colors.grey,
+                              ),
+                            ],
+                          ),
                         ),
-                        isExpanded: true,
-                        items: [
-                          const DropdownMenuItem(
-                            value: null,
-                            child: Text('All Particulars'),
-                          ),
-                          ..._availableAccounts.map(
-                            (acc) =>
-                                DropdownMenuItem(value: acc, child: Text(acc)),
-                          ),
-                        ],
-                        onChanged: (val) => setState(() {
-                          _selectedAccountFilter = val;
-                          _applySearchFilter();
-                        }),
                       ),
                     ),
                     const SizedBox(width: 16),
@@ -804,7 +1259,9 @@ class LedgerDataSource extends DataTableSource {
 
   @override
   DataRow? getRow(int index) {
-    if (index >= _data.length) return null;
+    if (index >= _data.length) {
+      return null;
+    }
     final row = _data[index];
 
     String debitStr = (row['Debit'] ?? row['debit'] ?? '0').replaceAll(
@@ -937,7 +1394,9 @@ class _EditTransactionDialogState extends State<_EditTransactionDialog> {
         updatedEntry['id'],
         updatedEntry,
       );
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
       if (success) {
         Navigator.pop(context);
         widget.onSaved();
