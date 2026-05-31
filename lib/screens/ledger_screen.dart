@@ -1324,30 +1324,47 @@ class _EditTransactionDialog extends StatefulWidget {
 
 class _EditTransactionDialogState extends State<_EditTransactionDialog> {
   final _formKey = GlobalKey<FormState>();
+
   late TextEditingController _descController;
   late TextEditingController _debitController;
   late TextEditingController _creditController;
+
   late String _entryType;
   late DateTime _selectedDate;
+
   bool _isSaving = false;
+
+  Map<String, List<String>> _accountsMap = {};
+
+  List<String> _heads = [];
+  List<String> _filteredParticulars = [];
+
+  String? _selectedHead;
+  String? _selectedParticular;
 
   @override
   void initState() {
     super.initState();
+
     _descController = TextEditingController(
       text:
           widget.transaction['Description'] ??
-          widget.transaction['description'],
+          widget.transaction['description'] ??
+          '',
     );
+
     String cleanDebit =
         (widget.transaction['Debit'] ?? widget.transaction['debit'] ?? '')
             .replaceAll(RegExp(r'[^0-9.-]'), '');
+
     String cleanCredit =
         (widget.transaction['Credit'] ?? widget.transaction['credit'] ?? '')
             .replaceAll(RegExp(r'[^0-9.-]'), '');
+
     _debitController = TextEditingController(
       text: cleanDebit == '0' ? '' : cleanDebit,
     );
+
     _creditController = TextEditingController(
       text: cleanCredit == '0' ? '' : cleanCredit,
     );
@@ -1356,15 +1373,19 @@ class _EditTransactionDialogState extends State<_EditTransactionDialog> {
         widget.transaction['EntryType'] ??
         widget.transaction['entryType'] ??
         'Rokad';
+
     if (tempType == 'Cash') {
       tempType = 'Rokad';
     }
+
     if (tempType == 'Journal') {
       tempType = 'Jama-Kharchi';
     }
+
     if (!['Rokad', 'Jama-Kharchi'].contains(tempType)) {
       tempType = 'Rokad';
     }
+
     _entryType = tempType;
 
     try {
@@ -1374,34 +1395,77 @@ class _EditTransactionDialogState extends State<_EditTransactionDialog> {
     } catch (_) {
       _selectedDate = DateTime.now();
     }
+
+    _loadAccounts();
+  }
+
+  Future<void> _loadAccounts() async {
+    try {
+      final data = await SheetsService.getCategorizedAccounts();
+
+      _accountsMap = data;
+
+      _heads = _accountsMap.keys.toList()..sort();
+
+      String currentAccount =
+          widget.transaction['Account'] ?? widget.transaction['account'] ?? '';
+
+      for (var head in _accountsMap.keys) {
+        if (_accountsMap[head]!.contains(currentAccount)) {
+          _selectedHead = head;
+          _selectedParticular = currentAccount;
+          _filteredParticulars = _accountsMap[head]!;
+          break;
+        }
+      }
+
+      if (mounted) {
+        setState(() {});
+      }
+    } catch (_) {}
+  }
+
+  @override
+  void dispose() {
+    _descController.dispose();
+    _debitController.dispose();
+    _creditController.dispose();
+    super.dispose();
   }
 
   Future<void> _updateEntry() async {
     if (_formKey.currentState!.validate()) {
       setState(() => _isSaving = true);
+
       Map<String, dynamic> updatedEntry = {
         'id': widget.transaction['ID'] ?? widget.transaction['id'],
         'date': DateFormat('MM/dd/yyyy').format(_selectedDate),
         'entryType': _entryType,
-        'account':
-            widget.transaction['Account'] ?? widget.transaction['account'],
-        'description': _descController.text,
-        'debit': _debitController.text.isEmpty ? '0' : _debitController.text,
-        'credit': _creditController.text.isEmpty ? '0' : _creditController.text,
+        'account': _selectedParticular ?? '',
+        'description': _descController.text.trim(),
+        'debit': _debitController.text.isEmpty
+            ? '0'
+            : _debitController.text.trim(),
+        'credit': _creditController.text.isEmpty
+            ? '0'
+            : _creditController.text.trim(),
       };
 
       bool success = await SheetsService.updateEntry(
         updatedEntry['id'],
         updatedEntry,
       );
+
       if (!mounted) {
         return;
       }
+
       if (success) {
         Navigator.pop(context);
         widget.onSaved();
       } else {
         setState(() => _isSaving = false);
+
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Update failed.'),
@@ -1435,6 +1499,7 @@ class _EditTransactionDialogState extends State<_EditTransactionDialog> {
                           firstDate: DateTime(2020),
                           lastDate: DateTime(2100),
                         );
+
                         if (picked != null) {
                           setState(() => _selectedDate = picked);
                         }
@@ -1444,10 +1509,16 @@ class _EditTransactionDialogState extends State<_EditTransactionDialog> {
                       ),
                     ),
                   ),
+
                   const SizedBox(width: 8),
+
                   Expanded(
                     child: DropdownButtonFormField<String>(
                       initialValue: _entryType,
+                      decoration: const InputDecoration(
+                        labelText: 'Type',
+                        border: OutlineInputBorder(),
+                      ),
                       items: ['Rokad', 'Jama-Kharchi']
                           .map(
                             (v) => DropdownMenuItem(value: v, child: Text(v)),
@@ -1458,18 +1529,69 @@ class _EditTransactionDialogState extends State<_EditTransactionDialog> {
                   ),
                 ],
               ),
+
               const SizedBox(height: 12),
+
+              DropdownButtonFormField<String>(
+                initialValue: _selectedHead,
+                decoration: const InputDecoration(
+                  labelText: 'Select Head',
+                  border: OutlineInputBorder(),
+                ),
+                items: _heads.map((head) {
+                  return DropdownMenuItem(value: head, child: Text(head));
+                }).toList(),
+                onChanged: (value) {
+                  setState(() {
+                    _selectedHead = value;
+                    _selectedParticular = null;
+
+                    _filteredParticulars = _accountsMap[value] ?? [];
+                  });
+                },
+              ),
+
+              const SizedBox(height: 12),
+
+              DropdownButtonFormField<String>(
+                initialValue: _selectedParticular,
+                decoration: const InputDecoration(
+                  labelText: 'Select Particular',
+                  border: OutlineInputBorder(),
+                ),
+                items: _filteredParticulars.map((acc) {
+                  return DropdownMenuItem(value: acc, child: Text(acc));
+                }).toList(),
+                onChanged: (value) {
+                  setState(() {
+                    _selectedParticular = value;
+                  });
+                },
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Select Particular';
+                  }
+                  return null;
+                },
+              ),
+
+              const SizedBox(height: 12),
+
               TextFormField(
                 controller: _descController,
                 decoration: const InputDecoration(labelText: 'Description'),
               ),
+
               const SizedBox(height: 12),
+
               TextFormField(
                 controller: _creditController,
                 keyboardType: TextInputType.number,
                 decoration: const InputDecoration(labelText: 'Credit (₹)'),
               ),
+
               const SizedBox(height: 12),
+
               TextFormField(
                 controller: _debitController,
                 keyboardType: TextInputType.number,
@@ -1479,11 +1601,13 @@ class _EditTransactionDialogState extends State<_EditTransactionDialog> {
           ),
         ),
       ),
+
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
           child: const Text('Cancel'),
         ),
+
         ElevatedButton(
           onPressed: _isSaving ? null : _updateEntry,
           child: _isSaving

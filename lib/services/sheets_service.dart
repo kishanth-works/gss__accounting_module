@@ -7,7 +7,11 @@ class SheetsService {
   static final _gsheets = GSheets(Secrets.credentialsJson);
   // REPLACE THESE WITH YOUR ACTUAL KEYS!
   static Worksheet? _transactionsSheet;
-  static Worksheet? _accountsSheet; // NEW: For dynamic accounts
+  static Worksheet? _accountsSheet; // For dynamic accounts
+
+  // --- NEW: Worksheets for Cotton-Sut-Kharid Workflow ---
+  static Worksheet? _kattinSheet;
+  static Worksheet? _cottonSheet;
 
   static Future<void> init() async {
     try {
@@ -16,8 +20,14 @@ class SheetsService {
       _transactionsSheet = spreadsheet.worksheetByTitle('Transactions');
       _accountsSheet = spreadsheet.worksheetByTitle('Accounts');
 
-      // Auto-create Accounts sheet if it doesn't exist yet
+      // Initialize the new tabs
+      _kattinSheet = spreadsheet.worksheetByTitle('Kattin');
+      _cottonSheet = spreadsheet.worksheetByTitle('Cotton-Sut-Kharid');
+
+      // Auto-create sheets if they don't exist yet
       _accountsSheet ??= await spreadsheet.addWorksheet('Accounts');
+      _kattinSheet ??= await spreadsheet.addWorksheet('Kattin');
+      _cottonSheet ??= await spreadsheet.addWorksheet('Cotton-Sut-Kharid');
 
       debugPrint('Google Sheets Initialized Successfully!');
     } catch (e) {
@@ -126,7 +136,7 @@ class SheetsService {
     }
   }
 
-  // --- NEW: DYNAMIC ACCOUNTS LOGIC ---
+  // --- DYNAMIC ACCOUNTS LOGIC ---
   static Future<Map<String, List<String>>> getCategorizedAccounts() async {
     if (_accountsSheet == null) return {};
     try {
@@ -154,6 +164,63 @@ class SheetsService {
       await _accountsSheet!.values.appendRow([head, account]);
       return true;
     } catch (e) {
+      return false;
+    }
+  }
+
+  // =======================================================================
+  // --- NEW: COTTON-SUT-KHARID WORKFLOW LOGIC ---
+  // =======================================================================
+
+  // 1. Fetch Worker by Roll No from the 'Kattin' tab
+  static Future<Map<String, String>?> getWorkerByRollNo(String rollNo) async {
+    if (_kattinSheet == null) return null;
+    try {
+      final rows = await _kattinSheet!.values.map.allRows();
+      if (rows == null) return null;
+
+      for (var row in rows) {
+        // Checking variations just in case of typos in Google Sheets
+        String sheetRollNo =
+            row['Roll no.'] ?? row['Roll No'] ?? row['roll no'] ?? '';
+
+        if (sheetRollNo.toString().trim() == rollNo.trim()) {
+          return {
+            'name': row['Name'] ?? row['name'] ?? 'Unknown Name',
+            'id': row['id'] ?? row['ID'] ?? 'Unknown ID',
+          };
+        }
+      }
+      return null; // Return null if roll no is not found
+    } catch (e) {
+      debugPrint('Error fetching worker by roll no: $e');
+      return null;
+    }
+  }
+
+  // 2. Insert the final calculated entry into the 'Cotton-Sut-Kharid' tab
+  static Future<bool> insertCottonEntry(Map<String, dynamic> entry) async {
+    if (_cottonSheet == null) return false;
+    try {
+      await _cottonSheet!.values.appendRow([
+        entry['date'], // Column A (क्रम सं० / Date)
+        entry['workerId'], // Column B (id)
+        entry['workerName'], // Column C (नाम कत्तिन)
+        entry['rollNo'], // Column D (रोल नंबर)
+        entry['gundiSankhya'], // Column E (गुंडी संख्या)
+        entry['noOfSut'], // Column F (नं० सूत)
+        entry['sutWeight'], // Column G (सूत तौल)
+        entry['rate'], // Column H (दर)
+        entry['dam'], // Column I (दाम)
+        entry['puniWeight'], // Column J (पूनी वजन)
+        entry['puniRate'], // Column K (पूनी दर)
+        entry['puniDam'], // Column L (पुनि दाम)
+        entry['finalAmount'], // Column M (दी गयी रकम)
+        entry['prashikshanAay'], // Column N (प्रशिक्षण आय) <--- नया कॉलम जोड़ दिया गया!
+      ]);
+      return true;
+    } catch (e) {
+      debugPrint('Error inserting cotton entry: $e');
       return false;
     }
   }

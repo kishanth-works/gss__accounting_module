@@ -7,6 +7,7 @@ import 'package:file_picker/file_picker.dart';
 import '../services/sheets_service.dart';
 import 'entry_form_screen.dart';
 import 'ledger_screen.dart';
+import 'cotton_entry_form_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -672,16 +673,41 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () async {
-          await Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => const EntryFormScreen()),
-          );
-          _fetchAndCalculateTrialBalance();
-        },
-        icon: const Icon(Icons.add),
-        label: const Text('New Entry'),
+      // --- FIXED: Both buttons are now cleanly separated side-by-side ---
+      floatingActionButton: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          FloatingActionButton.extended(
+            heroTag: 'btn_cotton_kharid',
+            onPressed: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const CottonEntryFormScreen(),
+                ),
+              );
+              _fetchAndCalculateTrialBalance(); // Refresh dashboard on return
+            },
+            icon: const Icon(Icons.add_business),
+            label: const Text('Cotton-Sut-Kharid'),
+            backgroundColor: Colors.teal.shade200,
+          ),
+          const SizedBox(width: 16), // Space between buttons
+          FloatingActionButton.extended(
+            heroTag: 'btn_new_entry',
+            onPressed: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const EntryFormScreen(),
+                ),
+              );
+              _fetchAndCalculateTrialBalance();
+            },
+            icon: const Icon(Icons.add),
+            label: const Text('New Entry'),
+          ),
+        ],
       ),
     );
   }
