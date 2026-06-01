@@ -13,28 +13,30 @@ class _CottonEntryFormScreenState extends State<CottonEntryFormScreen> {
   final _formKey = GlobalKey<FormState>();
 
   static DateTime? _lastSelectedDate;
+  static String? _lastNoOfSut;
+  static String? _lastRate;
+  static String? _lastPuniRate;
 
-  // Manual Inputs
   final TextEditingController _rollNoController = TextEditingController();
   final TextEditingController _noOfSutController = TextEditingController();
   final TextEditingController _sutWeightController = TextEditingController();
   final TextEditingController _rateController = TextEditingController();
   final TextEditingController _puniRateController = TextEditingController();
 
-  // Fetched Worker Data
+  final FocusNode _rollNoFocusNode = FocusNode();
+  final FocusNode _sutWeightFocusNode = FocusNode();
+
   String? _workerName;
   String? _workerId;
   late DateTime _selectedDate;
 
-  // State
   bool _isSearching = false;
   bool _isSaving = false;
 
-  // Auto-Calculated Fields
   double _gundiSankhya = 0.0;
   double _dam = 0.0;
   double _puniDam = 0.0;
-  double _prashikshanAay = 0.0; // NEW: प्रशिक्षण आय
+  double _prashikshanAay = 0.0;
   double _finalAmount = 0.0;
 
   @override
@@ -42,7 +44,10 @@ class _CottonEntryFormScreenState extends State<CottonEntryFormScreen> {
     super.initState();
     _selectedDate = _lastSelectedDate ?? DateTime.now();
 
-    // Listeners to trigger math when user types
+    if (_lastNoOfSut != null) _noOfSutController.text = _lastNoOfSut!;
+    if (_lastRate != null) _rateController.text = _lastRate!;
+    if (_lastPuniRate != null) _puniRateController.text = _lastPuniRate!;
+
     _noOfSutController.addListener(_calculateTotal);
     _sutWeightController.addListener(_calculateTotal);
     _rateController.addListener(_calculateTotal);
@@ -56,28 +61,22 @@ class _CottonEntryFormScreenState extends State<CottonEntryFormScreen> {
     _sutWeightController.dispose();
     _rateController.dispose();
     _puniRateController.dispose();
+    _rollNoFocusNode.dispose();
+    _sutWeightFocusNode.dispose();
     super.dispose();
   }
 
   void _calculateTotal() {
-    // Grab the values typed by the user (default to 0 if empty)
     double noOfSut = double.tryParse(_noOfSutController.text) ?? 0.0;
     double sutWeight = double.tryParse(_sutWeightController.text) ?? 0.0;
     double rate = double.tryParse(_rateController.text) ?? 0.0;
     double puniRate = double.tryParse(_puniRateController.text) ?? 0.0;
 
     setState(() {
-      // 1. गुंडी संख्या
       _gundiSankhya = noOfSut * sutWeight;
-      // 2. दाम
       _dam = sutWeight * rate;
-      // 3. पुनि दाम (Puni Weight is same as Sut Weight)
       _puniDam = sutWeight * puniRate;
-
-      // 4. प्रशिक्षण आय (NEW Formula: 0.30 * गुंडी संख्या)
       _prashikshanAay = 0.30 * _gundiSankhya;
-
-      // 5. दी गयी रकम (Final Amount = Dam - Puni Dam - Prashikshan Aay)
       _finalAmount = _dam - _puniDam - _prashikshanAay;
     });
   }
@@ -99,6 +98,11 @@ class _CottonEntryFormScreenState extends State<CottonEntryFormScreen> {
 
     final workerData = await SheetsService.getWorkerByRollNo(rollNo);
 
+    Map<String, String>? lastRates;
+    if (workerData != null && _noOfSutController.text.isEmpty) {
+      lastRates = await SheetsService.getLastCottonRates();
+    }
+
     if (!mounted) return;
 
     setState(() {
@@ -109,13 +113,28 @@ class _CottonEntryFormScreenState extends State<CottonEntryFormScreen> {
       setState(() {
         _workerName = workerData['name'];
         _workerId = workerData['id'];
+
+        if (lastRates != null) {
+          _noOfSutController.text = lastRates['noOfSut'] ?? '';
+          _rateController.text = lastRates['rate'] ?? '';
+          _puniRateController.text = lastRates['puniRate'] ?? '';
+
+          _lastNoOfSut = _noOfSutController.text;
+          _lastRate = _rateController.text;
+          _lastPuniRate = _puniRateController.text;
+
+          _calculateTotal();
+        }
       });
+
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('कत्तिन मिल गई!'),
           backgroundColor: Colors.green,
         ),
       );
+
+      _sutWeightFocusNode.requestFocus();
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -142,7 +161,6 @@ class _CottonEntryFormScreenState extends State<CottonEntryFormScreen> {
 
     String formattedDate = DateFormat('dd/MM/yyyy').format(_selectedDate);
 
-    // Map fields to match Google Sheets exactly, including the new column
     Map<String, dynamic> entryData = {
       'date': formattedDate,
       'workerId': _workerId,
@@ -157,7 +175,7 @@ class _CottonEntryFormScreenState extends State<CottonEntryFormScreen> {
       'puniRate': _puniRateController.text.trim(),
       'puniDam': _puniDam.toStringAsFixed(2),
       'finalAmount': _finalAmount.toStringAsFixed(2),
-      'prashikshanAay': _prashikshanAay.toStringAsFixed(2), // NEW COLUMN DATA
+      'prashikshanAay': _prashikshanAay.toStringAsFixed(2),
     };
 
     bool success = await SheetsService.insertCottonEntry(entryData);
@@ -176,15 +194,15 @@ class _CottonEntryFormScreenState extends State<CottonEntryFormScreen> {
         ),
       );
 
-      // Clear the form for the next entry
+      _lastNoOfSut = _noOfSutController.text;
+      _lastRate = _rateController.text;
+      _lastPuniRate = _puniRateController.text;
+
       setState(() {
         _rollNoController.clear();
         _workerName = null;
         _workerId = null;
-        _noOfSutController.clear();
         _sutWeightController.clear();
-        _rateController.clear();
-        _puniRateController.clear();
 
         _gundiSankhya = 0.0;
         _dam = 0.0;
@@ -192,6 +210,8 @@ class _CottonEntryFormScreenState extends State<CottonEntryFormScreen> {
         _prashikshanAay = 0.0;
         _finalAmount = 0.0;
       });
+
+      _rollNoFocusNode.requestFocus();
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -218,7 +238,6 @@ class _CottonEntryFormScreenState extends State<CottonEntryFormScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // --- DATE SELECTOR ---
                     ListTile(
                       shape: RoundedRectangleBorder(
                         side: BorderSide(color: Colors.grey.shade400),
@@ -251,14 +270,14 @@ class _CottonEntryFormScreenState extends State<CottonEntryFormScreen> {
                       },
                     ),
                     const SizedBox(height: 20),
-
-                    // --- ROLL NO SEARCH ---
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Expanded(
                           child: TextFormField(
                             controller: _rollNoController,
+                            focusNode: _rollNoFocusNode,
+                            autofocus: true,
                             decoration: const InputDecoration(
                               labelText: 'रोल नंबर',
                               border: OutlineInputBorder(),
@@ -300,8 +319,6 @@ class _CottonEntryFormScreenState extends State<CottonEntryFormScreen> {
                       ],
                     ),
                     const SizedBox(height: 20),
-
-                    // --- WORKER DETAILS AND INPUT FIELDS ---
                     if (_workerName != null) ...[
                       Card(
                         color: Colors.green.shade50,
@@ -330,8 +347,6 @@ class _CottonEntryFormScreenState extends State<CottonEntryFormScreen> {
                         ),
                       ),
                       const SizedBox(height: 20),
-
-                      // Row 1: नं० सूत & सूत तौल
                       Row(
                         children: [
                           Expanded(
@@ -353,9 +368,18 @@ class _CottonEntryFormScreenState extends State<CottonEntryFormScreen> {
                           Expanded(
                             child: TextFormField(
                               controller: _sutWeightController,
-                              decoration: const InputDecoration(
-                                labelText: 'सूत तौल',
-                                border: OutlineInputBorder(),
+                              focusNode: _sutWeightFocusNode,
+                              decoration: InputDecoration(
+                                labelText: 'सूत तौल (Weight)',
+                                border: const OutlineInputBorder(),
+                                filled: true,
+                                fillColor: Colors.amber.shade50,
+                                focusedBorder: OutlineInputBorder(
+                                  borderSide: BorderSide(
+                                    color: Colors.orange.shade700,
+                                    width: 2.0,
+                                  ),
+                                ),
                               ),
                               keyboardType:
                                   const TextInputType.numberWithOptions(
@@ -368,8 +392,6 @@ class _CottonEntryFormScreenState extends State<CottonEntryFormScreen> {
                         ],
                       ),
                       const SizedBox(height: 16),
-
-                      // Row 2: दर & पूनी दर
                       Row(
                         children: [
                           Expanded(
@@ -408,8 +430,6 @@ class _CottonEntryFormScreenState extends State<CottonEntryFormScreen> {
                         ],
                       ),
                       const SizedBox(height: 20),
-
-                      // --- CALCULATIONS DISPLAY ---
                       Container(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
@@ -519,8 +539,6 @@ class _CottonEntryFormScreenState extends State<CottonEntryFormScreen> {
                         ),
                       ),
                       const SizedBox(height: 30),
-
-                      // --- SUBMIT BUTTON ---
                       ElevatedButton(
                         onPressed: _submitForm,
                         style: ElevatedButton.styleFrom(

@@ -3,28 +3,20 @@ import 'package:gsheets/gsheets.dart';
 import '../secrets.dart';
 
 class SheetsService {
-  // 1. Pass the secret JSON string directly from Secrets!
   static final _gsheets = GSheets(Secrets.credentialsJson);
-  // REPLACE THESE WITH YOUR ACTUAL KEYS!
   static Worksheet? _transactionsSheet;
-  static Worksheet? _accountsSheet; // For dynamic accounts
-
-  // --- NEW: Worksheets for Cotton-Sut-Kharid Workflow ---
+  static Worksheet? _accountsSheet;
   static Worksheet? _kattinSheet;
   static Worksheet? _cottonSheet;
 
   static Future<void> init() async {
     try {
-      // 2. Pass the secret Spreadsheet ID directly from Secrets!
       final spreadsheet = await _gsheets.spreadsheet(Secrets.spreadsheetId);
       _transactionsSheet = spreadsheet.worksheetByTitle('Transactions');
       _accountsSheet = spreadsheet.worksheetByTitle('Accounts');
-
-      // Initialize the new tabs
       _kattinSheet = spreadsheet.worksheetByTitle('Kattin');
       _cottonSheet = spreadsheet.worksheetByTitle('Cotton-Sut-Kharid');
 
-      // Auto-create sheets if they don't exist yet
       _accountsSheet ??= await spreadsheet.addWorksheet('Accounts');
       _kattinSheet ??= await spreadsheet.addWorksheet('Kattin');
       _cottonSheet ??= await spreadsheet.addWorksheet('Cotton-Sut-Kharid');
@@ -35,7 +27,6 @@ class SheetsService {
     }
   }
 
-  // FIXED: Strictly sequential IDs starting at 0001
   static Future<String> getNextId() async {
     if (_transactionsSheet == null) return '0001';
     try {
@@ -45,7 +36,6 @@ class SheetsService {
       int maxId = 0;
       for (var row in rows) {
         String idRaw = row['id'] ?? row['ID'] ?? '0';
-        // Strip out any non-numeric characters (like 'TXN-')
         String idStr = idRaw.replaceAll(RegExp(r'[^0-9]'), '');
         if (idStr.isNotEmpty) {
           int? parsedId = int.tryParse(idStr);
@@ -60,7 +50,6 @@ class SheetsService {
     }
   }
 
-  // RESTORED: Single row entry
   static Future<bool> insertEntry(Map<String, dynamic> entry) async {
     if (_transactionsSheet == null) return false;
     try {
@@ -68,7 +57,7 @@ class SheetsService {
         entry['id'],
         entry['date'],
         entry['entryType'],
-        entry['account'], // We just save the selected account
+        entry['account'],
         entry['description'],
         entry['credit'],
         entry['debit'],
@@ -79,7 +68,6 @@ class SheetsService {
     }
   }
 
-  // FETCH TRANSACTIONS
   static Future<List<Map<String, String>>> getAllEntries() async {
     if (_transactionsSheet == null) return [];
     try {
@@ -90,7 +78,6 @@ class SheetsService {
     }
   }
 
-  // UPDATE TRANSACTION
   static Future<bool> updateEntry(
     String id,
     Map<String, dynamic> newEntry,
@@ -119,7 +106,6 @@ class SheetsService {
     }
   }
 
-  // DELETE TRANSACTION
   static Future<bool> deleteEntry(String id) async {
     if (_transactionsSheet == null) return false;
     try {
@@ -136,7 +122,6 @@ class SheetsService {
     }
   }
 
-  // --- DYNAMIC ACCOUNTS LOGIC ---
   static Future<Map<String, List<String>>> getCategorizedAccounts() async {
     if (_accountsSheet == null) return {};
     try {
@@ -168,11 +153,6 @@ class SheetsService {
     }
   }
 
-  // =======================================================================
-  // --- NEW: COTTON-SUT-KHARID WORKFLOW LOGIC ---
-  // =======================================================================
-
-  // 1. Fetch Worker by Roll No from the 'Kattin' tab
   static Future<Map<String, String>?> getWorkerByRollNo(String rollNo) async {
     if (_kattinSheet == null) return null;
     try {
@@ -180,10 +160,8 @@ class SheetsService {
       if (rows == null) return null;
 
       for (var row in rows) {
-        // Checking variations just in case of typos in Google Sheets
         String sheetRollNo =
             row['Roll no.'] ?? row['Roll No'] ?? row['roll no'] ?? '';
-
         if (sheetRollNo.toString().trim() == rollNo.trim()) {
           return {
             'name': row['Name'] ?? row['name'] ?? 'Unknown Name',
@@ -191,37 +169,61 @@ class SheetsService {
           };
         }
       }
-      return null; // Return null if roll no is not found
+      return null;
     } catch (e) {
       debugPrint('Error fetching worker by roll no: $e');
       return null;
     }
   }
 
-  // 2. Insert the final calculated entry into the 'Cotton-Sut-Kharid' tab
   static Future<bool> insertCottonEntry(Map<String, dynamic> entry) async {
     if (_cottonSheet == null) return false;
     try {
       await _cottonSheet!.values.appendRow([
-        entry['date'], // Column A (क्रम सं० / Date)
-        entry['workerId'], // Column B (id)
-        entry['workerName'], // Column C (नाम कत्तिन)
-        entry['rollNo'], // Column D (रोल नंबर)
-        entry['gundiSankhya'], // Column E (गुंडी संख्या)
-        entry['noOfSut'], // Column F (नं० सूत)
-        entry['sutWeight'], // Column G (सूत तौल)
-        entry['rate'], // Column H (दर)
-        entry['dam'], // Column I (दाम)
-        entry['puniWeight'], // Column J (पूनी वजन)
-        entry['puniRate'], // Column K (पूनी दर)
-        entry['puniDam'], // Column L (पुनि दाम)
-        entry['finalAmount'], // Column M (दी गयी रकम)
-        entry['prashikshanAay'], // Column N (प्रशिक्षण आय) <--- नया कॉलम जोड़ दिया गया!
+        entry['date'],
+        entry['workerId'],
+        entry['workerName'],
+        entry['rollNo'],
+        entry['gundiSankhya'],
+        entry['noOfSut'],
+        entry['sutWeight'],
+        entry['rate'],
+        entry['dam'],
+        entry['puniWeight'],
+        entry['puniRate'],
+        entry['puniDam'],
+        entry['finalAmount'],
+        entry['prashikshanAay'],
       ]);
       return true;
     } catch (e) {
       debugPrint('Error inserting cotton entry: $e');
       return false;
+    }
+  }
+
+  static Future<Map<String, String>?> getLastCottonRates() async {
+    if (_cottonSheet == null) return null;
+    try {
+      final allRows = await _cottonSheet!.values.allRows();
+      if (allRows.isEmpty) return null;
+
+      for (int i = allRows.length - 1; i >= 1; i--) {
+        List<String> row = allRows[i];
+        if (row.length >= 11 &&
+            row[0].trim().isNotEmpty &&
+            !row[0].contains('क्रम')) {
+          return {
+            'noOfSut': row.length > 5 ? row[5] : '',
+            'rate': row.length > 7 ? row[7] : '',
+            'puniRate': row.length > 10 ? row[10] : '',
+          };
+        }
+      }
+      return null;
+    } catch (e) {
+      debugPrint('Error fetching last cotton rates: $e');
+      return null;
     }
   }
 }
