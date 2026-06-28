@@ -326,7 +326,15 @@ class _LedgerScreenState extends State<LedgerScreen> {
 
     // Adding all 7 columns to perfectly match the Excel sheet
     for (var row in printData) {
-      String id = row['ID'] ?? row['id'] ?? '';
+      // Bulletproof ID Extractor
+      String id = '';
+      for (var key in row.keys) {
+        if (key.trim().toLowerCase() == 'id') {
+          id = row[key]?.toString().trim() ?? '';
+          break;
+        }
+      }
+
       String type = row['EntryType'] ?? row['entryType'] ?? '';
       String acc = row['Account'] ?? row['account'] ?? '';
       String desc = row['Description'] ?? row['description'] ?? '';
@@ -394,6 +402,7 @@ class _LedgerScreenState extends State<LedgerScreen> {
 
     pdf.addPage(
       pw.MultiPage(
+        maxPages: 200,
         pageFormat: PdfPageFormat.a4.landscape,
         margin: const pw.EdgeInsets.only(
           top: 70,
@@ -718,12 +727,21 @@ class _LedgerScreenState extends State<LedgerScreen> {
         totalDebit += debit;
         totalCredit += credit;
 
+        String safeId =
+            (row['ID'] ??
+                    row['id'] ??
+                    row['Id'] ??
+                    row[' ID'] ??
+                    row['id '] ??
+                    '')
+                .toString()
+                .trim();
         sheetObject.updateCell(
           excel.CellIndex.indexByColumnRow(
             columnIndex: 0,
             rowIndex: currentRow,
           ),
-          excel.TextCellValue(row['ID'] ?? row['id'] ?? ''),
+          excel.TextCellValue(safeId),
           cellStyle: contentStyle,
         );
         sheetObject.updateCell(
@@ -1275,7 +1293,18 @@ class LedgerDataSource extends DataTableSource {
 
     return DataRow(
       cells: [
-        DataCell(Text(row['ID'] ?? row['id'] ?? '')),
+        DataCell(
+          Text(
+            (row['ID'] ??
+                    row['id'] ??
+                    row['Id'] ??
+                    row[' ID'] ??
+                    row['id '] ??
+                    '')
+                .toString()
+                .trim(),
+          ),
+        ),
         DataCell(Text(row['displayDate'] ?? '')),
         DataCell(Text(row['EntryType'] ?? row['entryType'] ?? '')),
         DataCell(Text(row['Account'] ?? row['account'] ?? '')),

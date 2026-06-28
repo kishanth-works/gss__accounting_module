@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'cotton_entry_form_screen.dart';
+import 'cotton_report_screen.dart';
 
 class CottonDashboardScreen extends StatelessWidget {
   const CottonDashboardScreen({super.key});
@@ -31,11 +32,10 @@ class CottonDashboardScreen extends StatelessWidget {
             title: 'View Reports (रिपोर्ट)',
             icon: Icons.receipt_long,
             color: Colors.blueGrey,
-            onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Reports screen coming next!')),
-              );
-            },
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const CottonReportScreen()),
+            ),
           ),
         ],
       ),

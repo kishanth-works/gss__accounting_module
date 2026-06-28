@@ -226,4 +226,81 @@ class SheetsService {
       return null;
     }
   }
+  // --- COTTON REPORTS METHODS ---
+
+  static Future<List<Map<String, dynamic>>> getAllCottonEntries() async {
+    if (_cottonSheet == null) return [];
+    try {
+      final allRows = await _cottonSheet!.values.allRows();
+      if (allRows.length <= 1) return []; // Skip if empty or only headers
+
+      List<Map<String, dynamic>> entries = [];
+      // Start at 1 to skip header row
+      for (int i = 1; i < allRows.length; i++) {
+        var row = allRows[i];
+        String safeGet(int index) => index < row.length ? row[index] : '';
+
+        entries.add({
+          '_rowIndex':
+              i + 1, // Store the exact Google Sheet row number (1-based index)
+          'date': safeGet(0),
+          'workerId': safeGet(1),
+          'workerName': safeGet(2),
+          'rollNo': safeGet(3),
+          'gundiSankhya': safeGet(4),
+          'noOfSut': safeGet(5),
+          'sutWeight': safeGet(6),
+          'rate': safeGet(7),
+          'dam': safeGet(8),
+          'puniWeight': safeGet(9),
+          'puniRate': safeGet(10),
+          'puniDam': safeGet(11),
+          'finalAmount': safeGet(12),
+          'prashikshanAay': safeGet(13),
+        });
+      }
+      return entries.reversed.toList(); // Newest entries at the top
+    } catch (e) {
+      debugPrint('Error fetching cotton entries: $e');
+      return [];
+    }
+  }
+
+  static Future<bool> updateCottonEntry(
+    int rowIndex,
+    Map<String, dynamic> entry,
+  ) async {
+    if (_cottonSheet == null) return false;
+    try {
+      await _cottonSheet!.values.insertRow(rowIndex, [
+        entry['date'],
+        entry['workerId'],
+        entry['workerName'],
+        entry['rollNo'],
+        entry['gundiSankhya'],
+        entry['noOfSut'],
+        entry['sutWeight'],
+        entry['rate'],
+        entry['dam'],
+        entry['puniWeight'],
+        entry['puniRate'],
+        entry['puniDam'],
+        entry['finalAmount'],
+        entry['prashikshanAay'],
+      ]);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  static Future<bool> deleteCottonEntry(int rowIndex) async {
+    if (_cottonSheet == null) return false;
+    try {
+      await _cottonSheet!.deleteRow(rowIndex);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
 }
