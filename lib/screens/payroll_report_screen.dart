@@ -201,7 +201,7 @@ class _PayrollReportScreenState extends State<PayrollReportScreen> {
   }
 
   // ==========================================
-  // 3. INTERACTIVE BATCH EDITOR (LONG PRESS)
+  // 3. INTERACTIVE BATCH EDITOR (MOBILE RESPONSIVE)
   // ==========================================
   void _showBatchEditDialog(
     String batchKey,
@@ -220,19 +220,23 @@ class _PayrollReportScreenState extends State<PayrollReportScreen> {
               title: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    'Edit Batch: Chq #$chequeNo',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  Expanded(
+                    child: Text(
+                      'Edit Chq #$chequeNo',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                   Text(
                     'Date: $date',
-                    style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+                    style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
                   ),
                 ],
               ),
+              // RESPONSIVE UPGRADE: Dynamically fills 95% width on mobile screens
               content: SizedBox(
-                width: 600,
-                height: 400,
+                width: MediaQuery.of(context).size.width * 0.95,
+                height: MediaQuery.of(context).size.height * 0.7,
                 child: Column(
                   children: [
                     Container(
@@ -243,7 +247,7 @@ class _PayrollReportScreenState extends State<PayrollReportScreen> {
                           Expanded(
                             flex: 3,
                             child: Text(
-                              'Employee Name',
+                              'Name',
                               style: TextStyle(fontWeight: FontWeight.bold),
                             ),
                           ),
@@ -261,7 +265,7 @@ class _PayrollReportScreenState extends State<PayrollReportScreen> {
                               style: TextStyle(fontWeight: FontWeight.bold),
                             ),
                           ),
-                          SizedBox(width: 48),
+                          SizedBox(width: 36),
                         ],
                       ),
                     ),
@@ -283,14 +287,20 @@ class _PayrollReportScreenState extends State<PayrollReportScreen> {
                                     item['name'] ?? '',
                                     style: const TextStyle(
                                       fontWeight: FontWeight.w600,
+                                      fontSize: 13,
                                     ),
+                                    overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
                                 Expanded(
                                   flex: 2,
                                   child: Text(
                                     item['ac'] ?? '',
-                                    style: const TextStyle(color: Colors.grey),
+                                    style: const TextStyle(
+                                      color: Colors.grey,
+                                      fontSize: 12,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
                                 Expanded(
@@ -300,6 +310,10 @@ class _PayrollReportScreenState extends State<PayrollReportScreen> {
                                     keyboardType: TextInputType.number,
                                     decoration: const InputDecoration(
                                       border: OutlineInputBorder(),
+                                      contentPadding: EdgeInsets.symmetric(
+                                        horizontal: 6,
+                                        vertical: 8,
+                                      ),
                                       isDense: true,
                                     ),
                                     onSubmitted: (newVal) async {
@@ -334,7 +348,10 @@ class _PayrollReportScreenState extends State<PayrollReportScreen> {
                                   icon: const Icon(
                                     Icons.delete,
                                     color: Colors.red,
+                                    size: 20,
                                   ),
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(),
                                   tooltip: 'Remove from Batch',
                                   onPressed: () async {
                                     setState(() => _isLoading = true);
@@ -395,7 +412,6 @@ class _PayrollReportScreenState extends State<PayrollReportScreen> {
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
 
-    // 3x scale guarantees 300 DPI Retina sharpness in print
     const double scale = 3.0;
     final scaledFontSize = fontSize * scale;
 
@@ -478,7 +494,6 @@ class _PayrollReportScreenState extends State<PayrollReportScreen> {
     String hindiWords = HindiAmountWords.convert(totalAmount);
     String formattedTotal = totalAmount.toStringAsFixed(0);
 
-    // Generate crisp 300 DPI Retina shaped blocks for all Hindi text
     final titleImg = await _buildHindiText(
       "ग्रामोद्योग सेवा संस्थान",
       fontSize: 18,
@@ -532,7 +547,6 @@ class _PayrollReportScreenState extends State<PayrollReportScreen> {
     pdf.addPage(
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4.portrait,
-        // 2 INCHES FROM TOP = exactly 144 points!
         margin: const pw.EdgeInsets.only(
           top: 144,
           bottom: 36,
@@ -540,7 +554,6 @@ class _PayrollReportScreenState extends State<PayrollReportScreen> {
           right: 36,
         ),
         build: (context) => [
-          // Header Section
           titleImg,
           pw.SizedBox(height: 2),
           subTitleImg,
@@ -587,7 +600,6 @@ class _PayrollReportScreenState extends State<PayrollReportScreen> {
           ),
           pw.SizedBox(height: 16),
 
-          // Table Section (English ASCII data renders natively)
           pw.TableHelper.fromTextArray(
             border: pw.TableBorder.all(width: 1, color: PdfColors.black),
             headerStyle: pw.TextStyle(
@@ -617,7 +629,6 @@ class _PayrollReportScreenState extends State<PayrollReportScreen> {
             data: tableData,
           ),
 
-          // Footer Total Row with Retina Hindi Shaper
           pw.Table(
             border: pw.TableBorder.all(width: 1, color: PdfColors.black),
             columnWidths: {
@@ -658,7 +669,7 @@ class _PayrollReportScreenState extends State<PayrollReportScreen> {
   }
 
   // ==========================================
-  // 6. HINDI EXCEL GENERATOR (FIXED BORDERS)
+  // 6. HINDI EXCEL GENERATOR
   // ==========================================
   Future<void> _exportBatchToExcel(
     String chequeNo,
@@ -679,8 +690,7 @@ class _PayrollReportScreenState extends State<PayrollReportScreen> {
       sheet.setColumnWidth(5, 15.0);
 
       var borderStyle = excel.Border(borderStyle: excel.BorderStyle.Thin);
-      String hindiFont =
-          'Nirmala UI'; // Microsoft's official Indian script font
+      String hindiFont = 'Nirmala UI';
 
       var boldCenter = excel.CellStyle(
         bold: true,
@@ -742,7 +752,6 @@ class _PayrollReportScreenState extends State<PayrollReportScreen> {
         bottomBorder: borderStyle,
       );
 
-      // Hindi Header Rows
       sheet.merge(
         excel.CellIndex.indexByString("A2"),
         excel.CellIndex.indexByString("F2"),
@@ -839,7 +848,6 @@ class _PayrollReportScreenState extends State<PayrollReportScreen> {
         cellStyle: normalCenter,
       );
 
-      // Table Headers
       List<String> headers = [
         'S.N.',
         'Name',
@@ -919,7 +927,6 @@ class _PayrollReportScreenState extends State<PayrollReportScreen> {
         currentRow++;
       }
 
-      // Footer Row
       sheet.merge(
         excel.CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow),
         excel.CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: currentRow),
@@ -973,10 +980,13 @@ class _PayrollReportScreenState extends State<PayrollReportScreen> {
   }
 
   // ==========================================
-  // 7. BUILD BATCH CARD UI
+  // 7. BUILD BATCH CARD UI (MOBILE ADAPTIVE)
   // ==========================================
   @override
   Widget build(BuildContext context) {
+    // RESPONSIVE BREAKPOINT: Dynamically stacks buttons on mobile screens (< 600px wide)
+    final bool isMobile = MediaQuery.of(context).size.width < 600;
+
     return Scaffold(
       backgroundColor: Colors.grey.shade50,
       appBar: AppBar(
@@ -1080,9 +1090,9 @@ class _PayrollReportScreenState extends State<PayrollReportScreen> {
                                               CrossAxisAlignment.start,
                                           children: [
                                             Text(
-                                              "Cheque No: #$chequeNo",
+                                              "Chq: #$chequeNo",
                                               style: const TextStyle(
-                                                fontSize: 18,
+                                                fontSize: 17,
                                                 fontWeight: FontWeight.bold,
                                                 color: Colors.black87,
                                               ),
@@ -1100,7 +1110,7 @@ class _PayrollReportScreenState extends State<PayrollReportScreen> {
                                     ),
                                     Container(
                                       padding: const EdgeInsets.symmetric(
-                                        horizontal: 12,
+                                        horizontal: 10,
                                         vertical: 6,
                                       ),
                                       decoration: BoxDecoration(
@@ -1114,7 +1124,7 @@ class _PayrollReportScreenState extends State<PayrollReportScreen> {
                                         "₹ ${batchTotal.toStringAsFixed(2)}",
                                         style: TextStyle(
                                           fontWeight: FontWeight.bold,
-                                          fontSize: 16,
+                                          fontSize: 15,
                                           color: Colors.green.shade800,
                                         ),
                                       ),
@@ -1122,69 +1132,156 @@ class _PayrollReportScreenState extends State<PayrollReportScreen> {
                                   ],
                                 ),
                                 const Divider(height: 24),
-                                Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text(
-                                      "${entries.length} Employees in this batch  •  (Long-press to Edit)",
-                                      style: TextStyle(
-                                        color: Colors.indigo.shade600,
-                                        fontWeight: FontWeight.w500,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                    Row(
-                                      children: [
-                                        OutlinedButton.icon(
-                                          icon: const Icon(
-                                            Icons.picture_as_pdf,
-                                            color: Colors.red,
-                                            size: 18,
-                                          ),
-                                          label: const Text(
-                                            "PDF Mandate",
-                                            style: TextStyle(color: Colors.red),
-                                          ),
-                                          style: OutlinedButton.styleFrom(
-                                            side: const BorderSide(
-                                              color: Colors.red,
-                                            ),
-                                          ),
-                                          onPressed: () => _exportBatchToPdf(
-                                            chequeNo,
-                                            date,
-                                            entries,
-                                          ),
-                                        ),
-                                        const SizedBox(width: 10),
-                                        OutlinedButton.icon(
-                                          icon: const Icon(
-                                            Icons.table_chart,
-                                            color: Colors.green,
-                                            size: 18,
-                                          ),
-                                          label: const Text(
-                                            "Excel",
+                                // RESPONSIVE FOOTER: Stacks buttons vertically on narrow mobile phones
+                                isMobile
+                                    ? Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.stretch,
+                                        children: [
+                                          Text(
+                                            "${entries.length} Employees in this batch • (Tap to Edit)",
                                             style: TextStyle(
-                                              color: Colors.green,
+                                              color: Colors.indigo.shade600,
+                                              fontWeight: FontWeight.w500,
+                                              fontSize: 13,
+                                            ),
+                                            textAlign: TextAlign.center,
+                                          ),
+                                          const SizedBox(height: 12),
+                                          Row(
+                                            children: [
+                                              Expanded(
+                                                child: OutlinedButton.icon(
+                                                  icon: const Icon(
+                                                    Icons.picture_as_pdf,
+                                                    color: Colors.red,
+                                                    size: 18,
+                                                  ),
+                                                  label: const Text(
+                                                    "PDF Mandate",
+                                                    style: TextStyle(
+                                                      color: Colors.red,
+                                                    ),
+                                                  ),
+                                                  style: OutlinedButton.styleFrom(
+                                                    side: const BorderSide(
+                                                      color: Colors.red,
+                                                    ),
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          vertical: 12,
+                                                        ),
+                                                  ),
+                                                  onPressed: () =>
+                                                      _exportBatchToPdf(
+                                                        chequeNo,
+                                                        date,
+                                                        entries,
+                                                      ),
+                                                ),
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Expanded(
+                                                child: OutlinedButton.icon(
+                                                  icon: const Icon(
+                                                    Icons.table_chart,
+                                                    color: Colors.green,
+                                                    size: 18,
+                                                  ),
+                                                  label: const Text(
+                                                    "Excel",
+                                                    style: TextStyle(
+                                                      color: Colors.green,
+                                                    ),
+                                                  ),
+                                                  style: OutlinedButton.styleFrom(
+                                                    side: const BorderSide(
+                                                      color: Colors.green,
+                                                    ),
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          vertical: 12,
+                                                        ),
+                                                  ),
+                                                  onPressed: () =>
+                                                      _exportBatchToExcel(
+                                                        chequeNo,
+                                                        date,
+                                                        entries,
+                                                      ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      )
+                                    : Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Text(
+                                            "${entries.length} Employees in this batch  •  (Long-press to Edit)",
+                                            style: TextStyle(
+                                              color: Colors.indigo.shade600,
+                                              fontWeight: FontWeight.w500,
+                                              fontSize: 13,
                                             ),
                                           ),
-                                          style: OutlinedButton.styleFrom(
-                                            side: const BorderSide(
-                                              color: Colors.green,
-                                            ),
+                                          Row(
+                                            children: [
+                                              OutlinedButton.icon(
+                                                icon: const Icon(
+                                                  Icons.picture_as_pdf,
+                                                  color: Colors.red,
+                                                  size: 18,
+                                                ),
+                                                label: const Text(
+                                                  "PDF Mandate",
+                                                  style: TextStyle(
+                                                    color: Colors.red,
+                                                  ),
+                                                ),
+                                                style: OutlinedButton.styleFrom(
+                                                  side: const BorderSide(
+                                                    color: Colors.red,
+                                                  ),
+                                                ),
+                                                onPressed: () =>
+                                                    _exportBatchToPdf(
+                                                      chequeNo,
+                                                      date,
+                                                      entries,
+                                                    ),
+                                              ),
+                                              const SizedBox(width: 10),
+                                              OutlinedButton.icon(
+                                                icon: const Icon(
+                                                  Icons.table_chart,
+                                                  color: Colors.green,
+                                                  size: 18,
+                                                ),
+                                                label: const Text(
+                                                  "Excel",
+                                                  style: TextStyle(
+                                                    color: Colors.green,
+                                                  ),
+                                                ),
+                                                style: OutlinedButton.styleFrom(
+                                                  side: const BorderSide(
+                                                    color: Colors.green,
+                                                  ),
+                                                ),
+                                                onPressed: () =>
+                                                    _exportBatchToExcel(
+                                                      chequeNo,
+                                                      date,
+                                                      entries,
+                                                    ),
+                                              ),
+                                            ],
                                           ),
-                                          onPressed: () => _exportBatchToExcel(
-                                            chequeNo,
-                                            date,
-                                            entries,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ],
-                                ),
+                                        ],
+                                      ),
                               ],
                             ),
                           ),

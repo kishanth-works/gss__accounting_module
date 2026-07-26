@@ -46,6 +46,9 @@ class _PayrollEntryScreenState extends State<PayrollEntryScreen> {
     });
   }
 
+  // ==========================================
+  // MOBILE-RESPONSIVE EMPLOYEE SELECT DIALOG
+  // ==========================================
   void _showEmployeeSelectDialog() {
     List<Map<String, String>> filtered = List.from(_allEmployees);
     showDialog(
@@ -58,8 +61,9 @@ class _PayrollEntryScreenState extends State<PayrollEntryScreen> {
                 'Select Employees',
                 style: TextStyle(fontWeight: FontWeight.bold),
               ),
+              // RESPONSIVE UPGRADE: Dynamically scale to 90% of screen width instead of fixed 450px
               content: SizedBox(
-                width: 450,
+                width: MediaQuery.of(context).size.width * 0.9,
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -178,7 +182,6 @@ class _PayrollEntryScreenState extends State<PayrollEntryScreen> {
       String amountStr = _amountControllers[key]?.text.trim() ?? '0.00';
       double amount = double.tryParse(amountStr) ?? 0.00;
 
-      // Structure: Date | Cheque No. | Name | Bank | IFSC Code | A/C no. | Amount
       batchRows.add([
         dateStr,
         chequeNo,
@@ -213,6 +216,9 @@ class _PayrollEntryScreenState extends State<PayrollEntryScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // RESPONSIVE BREAKPOINT: Detects if running on a narrower mobile screen (< 600px)
+    final bool isMobile = MediaQuery.of(context).size.width < 600;
+
     return Scaffold(
       backgroundColor: Colors.grey.shade50,
       appBar: AppBar(
@@ -230,81 +236,145 @@ class _PayrollEntryScreenState extends State<PayrollEntryScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // TOP HALF: Global Controls
+                  // TOP HALF: Adaptive Controls (Stacks vertically on phone, horizontal on PC)
                   Card(
                     elevation: 2,
                     child: Padding(
                       padding: const EdgeInsets.all(16.0),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            flex: 1,
-                            child: OutlinedButton.icon(
-                              icon: const Icon(
-                                Icons.calendar_today,
-                                color: Colors.indigo,
-                              ),
-                              label: Text(
-                                DateFormat('dd/MM/yyyy').format(_selectedDate),
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
+                      child: isMobile
+                          ? Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                OutlinedButton.icon(
+                                  icon: const Icon(
+                                    Icons.calendar_today,
+                                    color: Colors.indigo,
+                                  ),
+                                  label: Text(
+                                    DateFormat(
+                                      'dd/MM/yyyy',
+                                    ).format(_selectedDate),
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  onPressed: () async {
+                                    final picked = await showDatePicker(
+                                      context: context,
+                                      initialDate: _selectedDate,
+                                      firstDate: DateTime(2020),
+                                      lastDate: DateTime(2100),
+                                    );
+                                    if (picked != null) {
+                                      setState(() => _selectedDate = picked);
+                                    }
+                                  },
+                                  style: OutlinedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 14,
+                                    ),
+                                  ),
                                 ),
-                              ),
-                              onPressed: () async {
-                                final picked = await showDatePicker(
-                                  context: context,
-                                  initialDate: _selectedDate,
-                                  firstDate: DateTime(2020),
-                                  lastDate: DateTime(2100),
-                                );
-                                if (picked != null) {
-                                  setState(() => _selectedDate = picked);
-                                }
-                              },
-                              style: OutlinedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 16,
+                                const SizedBox(height: 12),
+                                TextField(
+                                  controller: _chequeController,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Master Cheque No.',
+                                    border: OutlineInputBorder(),
+                                    prefixIcon: Icon(
+                                      Icons.numbers,
+                                      color: Colors.indigo,
+                                    ),
+                                    isDense: true,
+                                  ),
                                 ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            flex: 2,
-                            child: TextField(
-                              controller: _chequeController,
-                              decoration: const InputDecoration(
-                                labelText:
-                                    'Master Cheque No. (सभी के लिए एक चेक नं०)',
-                                border: OutlineInputBorder(),
-                                prefixIcon: Icon(
-                                  Icons.numbers,
-                                  color: Colors.indigo,
+                                const SizedBox(height: 12),
+                                ElevatedButton.icon(
+                                  onPressed: _showEmployeeSelectDialog,
+                                  icon: const Icon(Icons.person_add),
+                                  label: const Text('Select Employees'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.indigo,
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 14,
+                                    ),
+                                  ),
                                 ),
-                              ),
+                              ],
+                            )
+                          : Row(
+                              children: [
+                                Expanded(
+                                  flex: 1,
+                                  child: OutlinedButton.icon(
+                                    icon: const Icon(
+                                      Icons.calendar_today,
+                                      color: Colors.indigo,
+                                    ),
+                                    label: Text(
+                                      DateFormat(
+                                        'dd/MM/yyyy',
+                                      ).format(_selectedDate),
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    onPressed: () async {
+                                      final picked = await showDatePicker(
+                                        context: context,
+                                        initialDate: _selectedDate,
+                                        firstDate: DateTime(2020),
+                                        lastDate: DateTime(2100),
+                                      );
+                                      if (picked != null) {
+                                        setState(() => _selectedDate = picked);
+                                      }
+                                    },
+                                    style: OutlinedButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 18,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  flex: 2,
+                                  child: TextField(
+                                    controller: _chequeController,
+                                    decoration: const InputDecoration(
+                                      labelText:
+                                          'Master Cheque No. (सभी के लिए एक चेक नं०)',
+                                      border: OutlineInputBorder(),
+                                      prefixIcon: Icon(
+                                        Icons.numbers,
+                                        color: Colors.indigo,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 16),
+                                ElevatedButton.icon(
+                                  onPressed: _showEmployeeSelectDialog,
+                                  icon: const Icon(Icons.person_add),
+                                  label: const Text('Select Employees'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.indigo,
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 20,
+                                      vertical: 18,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
-                          ),
-                          const SizedBox(width: 16),
-                          ElevatedButton.icon(
-                            onPressed: _showEmployeeSelectDialog,
-                            icon: const Icon(Icons.person_add),
-                            label: const Text('Select Employees'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.indigo,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 20,
-                                vertical: 18,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
                     ),
                   ),
                   const SizedBox(height: 16),
 
-                  // BOTTOM HALF: Selected Employees Grid
+                  // BOTTOM HALF: Selected Employees Grid (Responsive item spacing)
                   Expanded(
                     child: _selectedEmployees.isEmpty
                         ? Center(
@@ -329,18 +399,18 @@ class _PayrollEntryScreenState extends State<PayrollEntryScreen> {
                                         MainAxisAlignment.spaceBetween,
                                     children: [
                                       Text(
-                                        'Selected Employees (${_selectedEmployees.length})',
+                                        'Selected (${_selectedEmployees.length})',
                                         style: const TextStyle(
                                           fontWeight: FontWeight.bold,
-                                          fontSize: 16,
+                                          fontSize: 15,
                                           color: Colors.indigo,
                                         ),
                                       ),
                                       const Text(
-                                        'Enter Amount (₹)',
+                                        'Amount (₹)',
                                         style: TextStyle(
                                           fontWeight: FontWeight.bold,
-                                          fontSize: 16,
+                                          fontSize: 15,
                                           color: Colors.indigo,
                                         ),
                                       ),
@@ -362,6 +432,8 @@ class _PayrollEntryScreenState extends State<PayrollEntryScreen> {
                                               Icons.delete_outline,
                                               color: Colors.red,
                                             ),
+                                            padding: EdgeInsets.zero,
+                                            constraints: const BoxConstraints(),
                                             onPressed: () {
                                               setState(() {
                                                 _selectedEmployees.removeAt(
@@ -371,6 +443,7 @@ class _PayrollEntryScreenState extends State<PayrollEntryScreen> {
                                               });
                                             },
                                           ),
+                                          const SizedBox(width: 8),
                                           Expanded(
                                             flex: 3,
                                             child: Column(
@@ -381,21 +454,28 @@ class _PayrollEntryScreenState extends State<PayrollEntryScreen> {
                                                   emp['name']!,
                                                   style: const TextStyle(
                                                     fontWeight: FontWeight.bold,
-                                                    fontSize: 15,
+                                                    fontSize: 14,
                                                   ),
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
                                                 ),
                                                 Text(
-                                                  'Bank: ${emp['bank']} | A/C: ${emp['ac']} | IFSC: ${emp['ifsc']}',
+                                                  'A/C: ${emp['ac']}',
                                                   style: TextStyle(
                                                     color: Colors.grey.shade600,
                                                     fontSize: 12,
                                                   ),
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
                                                 ),
                                               ],
                                             ),
                                           ),
-                                          Expanded(
-                                            flex: 1,
+                                          const SizedBox(width: 8),
+                                          SizedBox(
+                                            width: isMobile
+                                                ? 110
+                                                : 150, // Caps text box size on mobile so it never overflows
                                             child: TextFormField(
                                               controller:
                                                   _amountControllers[key],
@@ -409,9 +489,10 @@ class _PayrollEntryScreenState extends State<PayrollEntryScreen> {
                                                 border: OutlineInputBorder(),
                                                 contentPadding:
                                                     EdgeInsets.symmetric(
-                                                      horizontal: 10,
+                                                      horizontal: 8,
                                                       vertical: 8,
                                                     ),
+                                                isDense: true,
                                               ),
                                             ),
                                           ),
