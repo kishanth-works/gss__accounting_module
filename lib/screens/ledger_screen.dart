@@ -89,7 +89,6 @@ class _LedgerScreenState extends State<LedgerScreen> {
               _selectedDateRange!.end.month,
               _selectedDateRange!.end.day,
             );
-
             if (pureRowDate.isBefore(pureStart) ||
                 pureRowDate.isAfter(pureEnd)) {
               continue;
@@ -140,7 +139,6 @@ class _LedgerScreenState extends State<LedgerScreen> {
             0;
         return idB.compareTo(idA);
       });
-
       setState(() {
         _allTransactions = parsedRows;
         _availableAccounts = accountsSet.toList()..sort();
@@ -259,13 +257,11 @@ class _LedgerScreenState extends State<LedgerScreen> {
 
   Future<void> _printLedgerDirectly() async {
     final pdf = pw.Document();
-
     // Download safe Google Fonts (Regular and Bold) to prevent Helvetica crashes
     final font = await PdfGoogleFonts.notoSansRegular();
     final boldFont = await PdfGoogleFonts.notoSansBold();
 
     List<Map<String, dynamic>> printData = List.from(_filteredTransactions);
-
     // Deep Sort - Ascending by Date, then Ascending by ID
     printData.sort((a, b) {
       DateTime dateA = DateTime.fromMillisecondsSinceEpoch(0);
@@ -294,7 +290,6 @@ class _LedgerScreenState extends State<LedgerScreen> {
           0;
       return idA.compareTo(idB);
     });
-
     // UPDATED TITLE LOGIC
     String reportName = "Ledger Report";
     if (_selectedTypeFilter != 'All') {
@@ -323,7 +318,6 @@ class _LedgerScreenState extends State<LedgerScreen> {
     double tDebit = 0;
     double tCredit = 0;
     final List<List<dynamic>> tableData = [];
-
     // Adding all 7 columns to perfectly match the Excel sheet
     for (var row in printData) {
       // Bulletproof ID Extractor
@@ -373,7 +367,6 @@ class _LedgerScreenState extends State<LedgerScreen> {
       fontWeight: pw.FontWeight.bold,
       color: PdfColors.black,
     );
-
     tableData.add([
       '',
       '',
@@ -383,7 +376,6 @@ class _LedgerScreenState extends State<LedgerScreen> {
       pw.Text(tCredit.toStringAsFixed(2), style: boldStyle),
       pw.Text(tDebit.toStringAsFixed(2), style: boldStyle),
     ]);
-
     tableData.add([
       '',
       '',
@@ -399,7 +391,6 @@ class _LedgerScreenState extends State<LedgerScreen> {
         style: boldStyle,
       ),
     ]);
-
     pdf.addPage(
       pw.MultiPage(
         maxPages: 200,
@@ -411,7 +402,6 @@ class _LedgerScreenState extends State<LedgerScreen> {
           right: 30,
         ),
         theme: pw.ThemeData.withFont(base: font, bold: boldFont),
-
         header: (pw.Context context) {
           return pw.Container(
             width: double.infinity,
@@ -445,7 +435,6 @@ class _LedgerScreenState extends State<LedgerScreen> {
             ),
           );
         },
-
         footer: (pw.Context context) {
           return pw.Container(
             alignment: pw.Alignment.centerRight,
@@ -456,7 +445,6 @@ class _LedgerScreenState extends State<LedgerScreen> {
             ),
           );
         },
-
         build: (context) => [
           pw.TableHelper.fromTextArray(
             border: pw.TableBorder.all(color: PdfColors.black, width: 1),
@@ -468,7 +456,6 @@ class _LedgerScreenState extends State<LedgerScreen> {
             cellStyle: const pw.TextStyle(color: PdfColors.black),
             rowDecoration: const pw.BoxDecoration(color: PdfColors.white),
             cellHeight: 22,
-
             cellAlignments: {
               0: pw.Alignment.centerLeft,
               1: pw.Alignment.centerLeft,
@@ -478,7 +465,6 @@ class _LedgerScreenState extends State<LedgerScreen> {
               5: pw.Alignment.centerRight,
               6: pw.Alignment.centerRight,
             },
-
             headers: [
               'ID',
               'Date',
@@ -502,7 +488,6 @@ class _LedgerScreenState extends State<LedgerScreen> {
         ],
       ),
     );
-
     await Printing.layoutPdf(
       onLayout: (PdfPageFormat format) async => pdf.save(),
       name: 'Ledger_Report.pdf',
@@ -512,7 +497,6 @@ class _LedgerScreenState extends State<LedgerScreen> {
 
   Future<void> _exportLedgerToExcel() async {
     setState(() => _isLoading = true);
-
     try {
       var excelFile = excel.Excel.createExcel();
       excel.Sheet sheetObject = excelFile['Report'];
@@ -587,7 +571,6 @@ class _LedgerScreenState extends State<LedgerScreen> {
         topBorder: borderStyle,
         bottomBorder: borderStyle,
       );
-
       sheetObject.merge(
         excel.CellIndex.indexByString("A1"),
         excel.CellIndex.indexByString("G1"),
@@ -597,7 +580,6 @@ class _LedgerScreenState extends State<LedgerScreen> {
         excel.TextCellValue("Gramodyog Seva Sansthan"),
         cellStyle: titleStyle,
       );
-
       // UPDATED TITLE LOGIC
       String reportName = "Ledger Report";
       if (_selectedTypeFilter != 'All') {
@@ -626,7 +608,6 @@ class _LedgerScreenState extends State<LedgerScreen> {
         excel.TextCellValue(reportName),
         cellStyle: titleStyle,
       );
-
       sheetObject.merge(
         excel.CellIndex.indexByString("A3"),
         excel.CellIndex.indexByString("G3"),
@@ -641,7 +622,6 @@ class _LedgerScreenState extends State<LedgerScreen> {
         excel.TextCellValue(dateRangeStr),
         cellStyle: subTitleStyle,
       );
-
       sheetObject.updateCell(
         excel.CellIndex.indexByString("A5"),
         excel.TextCellValue("ID"),
@@ -677,11 +657,9 @@ class _LedgerScreenState extends State<LedgerScreen> {
         excel.TextCellValue("Debit (Dr.)"),
         cellStyle: headerStyle,
       );
-
       int currentRow = 5;
       double totalDebit = 0.0;
       double totalCredit = 0.0;
-
       List<Map<String, dynamic>> excelExportData = List.from(
         _filteredTransactions,
       );
@@ -694,6 +672,7 @@ class _LedgerScreenState extends State<LedgerScreen> {
         try {
           dateB = DateFormat('dd/MM/yyyy').parse(b['displayDate'] ?? '');
         } catch (_) {}
+
         int dateComparison = dateA.compareTo(dateB);
         if (dateComparison != 0) {
           return dateComparison;
@@ -710,7 +689,6 @@ class _LedgerScreenState extends State<LedgerScreen> {
             0;
         return idA.compareTo(idB);
       });
-
       for (var row in excelExportData) {
         String debitStr = (row['Debit'] ?? row['debit'] ?? '0').replaceAll(
           RegExp(r'[^0-9.-]'),
@@ -720,13 +698,11 @@ class _LedgerScreenState extends State<LedgerScreen> {
           RegExp(r'[^0-9.-]'),
           '',
         );
-
         double debit = double.tryParse(debitStr) ?? 0.0;
         double credit = double.tryParse(creditStr) ?? 0.0;
 
         totalDebit += debit;
         totalCredit += credit;
-
         String safeId =
             (row['ID'] ??
                     row['id'] ??
@@ -792,7 +768,6 @@ class _LedgerScreenState extends State<LedgerScreen> {
           debit > 0 ? excel.DoubleCellValue(debit) : excel.TextCellValue('-'),
           cellStyle: currencyStyle,
         );
-
         currentRow++;
       }
 
@@ -816,7 +791,6 @@ class _LedgerScreenState extends State<LedgerScreen> {
         excel.TextCellValue(''),
         cellStyle: contentStyle,
       );
-
       sheetObject.updateCell(
         excel.CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: currentRow),
         excel.TextCellValue('TOTAL'),
@@ -832,7 +806,6 @@ class _LedgerScreenState extends State<LedgerScreen> {
         excel.DoubleCellValue(totalDebit),
         cellStyle: totalStyle,
       );
-
       currentRow++;
       double balance = totalDebit - totalCredit;
 
@@ -841,7 +814,6 @@ class _LedgerScreenState extends State<LedgerScreen> {
         excel.TextCellValue('CLOSING BALANCE'),
         cellStyle: totalStyle,
       );
-
       if (balance < 0) {
         sheetObject.updateCell(
           excel.CellIndex.indexByColumnRow(
@@ -1019,7 +991,6 @@ class _LedgerScreenState extends State<LedgerScreen> {
       _showEditDialog,
       _deleteTransaction,
     );
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('Ledger Book'),
@@ -1290,7 +1261,6 @@ class LedgerDataSource extends DataTableSource {
       RegExp(r'[^0-9.-]'),
       '',
     );
-
     return DataRow(
       cells: [
         DataCell(
@@ -1357,7 +1327,6 @@ class _EditTransactionDialogState extends State<_EditTransactionDialog> {
   late TextEditingController _descController;
   late TextEditingController _debitController;
   late TextEditingController _creditController;
-
   late String _entryType;
   late DateTime _selectedDate;
 
@@ -1374,35 +1343,28 @@ class _EditTransactionDialogState extends State<_EditTransactionDialog> {
   @override
   void initState() {
     super.initState();
-
     _descController = TextEditingController(
       text:
           widget.transaction['Description'] ??
           widget.transaction['description'] ??
           '',
     );
-
     String cleanDebit =
         (widget.transaction['Debit'] ?? widget.transaction['debit'] ?? '')
             .replaceAll(RegExp(r'[^0-9.-]'), '');
-
     String cleanCredit =
         (widget.transaction['Credit'] ?? widget.transaction['credit'] ?? '')
             .replaceAll(RegExp(r'[^0-9.-]'), '');
-
     _debitController = TextEditingController(
       text: cleanDebit == '0' ? '' : cleanDebit,
     );
-
     _creditController = TextEditingController(
       text: cleanCredit == '0' ? '' : cleanCredit,
     );
-
     String tempType =
         widget.transaction['EntryType'] ??
         widget.transaction['entryType'] ??
         'Rokad';
-
     if (tempType == 'Cash') {
       tempType = 'Rokad';
     }
@@ -1431,7 +1393,6 @@ class _EditTransactionDialogState extends State<_EditTransactionDialog> {
   Future<void> _loadAccounts() async {
     try {
       final data = await SheetsService.getCategorizedAccounts();
-
       _accountsMap = data;
 
       _heads = _accountsMap.keys.toList()..sort();
@@ -1472,12 +1433,15 @@ class _EditTransactionDialogState extends State<_EditTransactionDialog> {
         'entryType': _entryType,
         'account': _selectedParticular ?? '',
         'description': _descController.text.trim(),
+        // THE DECIMAL FIX: Strictly format to 2 decimal places before saving to sheets
         'debit': _debitController.text.isEmpty
-            ? '0'
-            : _debitController.text.trim(),
+            ? '0.00'
+            : (double.tryParse(_debitController.text.trim()) ?? 0.0)
+                  .toStringAsFixed(2),
         'credit': _creditController.text.isEmpty
-            ? '0'
-            : _creditController.text.trim(),
+            ? '0.00'
+            : (double.tryParse(_creditController.text.trim()) ?? 0.0)
+                  .toStringAsFixed(2),
       };
 
       bool success = await SheetsService.updateEntry(
@@ -1494,7 +1458,6 @@ class _EditTransactionDialogState extends State<_EditTransactionDialog> {
         widget.onSaved();
       } else {
         setState(() => _isSaving = false);
-
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Update failed.'),
@@ -1574,7 +1537,6 @@ class _EditTransactionDialogState extends State<_EditTransactionDialog> {
                   setState(() {
                     _selectedHead = value;
                     _selectedParticular = null;
-
                     _filteredParticulars = _accountsMap[value] ?? [];
                   });
                 },
@@ -1630,13 +1592,11 @@ class _EditTransactionDialogState extends State<_EditTransactionDialog> {
           ),
         ),
       ),
-
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
           child: const Text('Cancel'),
         ),
-
         ElevatedButton(
           onPressed: _isSaving ? null : _updateEntry,
           child: _isSaving

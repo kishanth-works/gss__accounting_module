@@ -8,24 +8,35 @@ class SheetsService {
   static Worksheet? _accountsSheet;
   static Worksheet? _kattinSheet;
   static Worksheet? _cottonSheet;
+  static Worksheet? _employeesSheet;
+  static Worksheet? _payrollsSheet;
 
   static Future<void> init() async {
     try {
       final spreadsheet = await _gsheets.spreadsheet(Secrets.spreadsheetId);
+
       _transactionsSheet = spreadsheet.worksheetByTitle('Transactions');
       _accountsSheet = spreadsheet.worksheetByTitle('Accounts');
       _kattinSheet = spreadsheet.worksheetByTitle('Kattin');
       _cottonSheet = spreadsheet.worksheetByTitle('Cotton-Sut-Kharid');
+      _employeesSheet = spreadsheet.worksheetByTitle('Employees');
+      _payrollsSheet = spreadsheet.worksheetByTitle('Payrolls');
 
       _accountsSheet ??= await spreadsheet.addWorksheet('Accounts');
       _kattinSheet ??= await spreadsheet.addWorksheet('Kattin');
       _cottonSheet ??= await spreadsheet.addWorksheet('Cotton-Sut-Kharid');
+      _employeesSheet ??= await spreadsheet.addWorksheet('Employees');
+      _payrollsSheet ??= await spreadsheet.addWorksheet('Payrolls');
 
       debugPrint('Google Sheets Initialized Successfully!');
     } catch (e) {
       debugPrint('Error initializing Sheets: $e');
     }
   }
+
+  // ==========================================
+  // --- ACCOUNTING MODULE METHODS ---
+  // ==========================================
 
   static Future<String> getNextId() async {
     if (_transactionsSheet == null) return '0001';
@@ -153,6 +164,10 @@ class SheetsService {
     }
   }
 
+  // ==========================================
+  // --- COTTON MODULE METHODS ---
+  // ==========================================
+
   static Future<Map<String, String>?> getWorkerByRollNo(String rollNo) async {
     if (_kattinSheet == null) return null;
     try {
@@ -226,7 +241,6 @@ class SheetsService {
       return null;
     }
   }
-  // --- COTTON REPORTS METHODS ---
 
   static Future<List<Map<String, dynamic>>> getAllCottonEntries() async {
     if (_cottonSheet == null) return [];
@@ -300,6 +314,104 @@ class SheetsService {
       await _cottonSheet!.deleteRow(rowIndex);
       return true;
     } catch (e) {
+      return false;
+    }
+  }
+
+  // ==========================================
+  // --- PAYROLL & EMPLOYEE METHODS ---
+  // ==========================================
+
+  static Future<List<Map<String, String>>> getEmployees() async {
+    if (_employeesSheet == null) return [];
+    try {
+      final rows = await _employeesSheet!.values.allRows();
+      if (rows.length <= 1) return []; // Skip header row
+
+      List<Map<String, String>> employees = [];
+      for (int i = 1; i < rows.length; i++) {
+        var r = rows[i];
+        String get(int idx) => idx < r.length ? r[idx].toString().trim() : '';
+        if (get(1).isNotEmpty) {
+          // Ensure Name is not blank
+          employees.add({
+            'sn': get(0),
+            'name': get(1),
+            'bank': get(2),
+            'ifsc': get(3),
+            'ac': get(4),
+          });
+        }
+      }
+      return employees;
+    } catch (e) {
+      debugPrint('Error fetching employees: $e');
+      return [];
+    }
+  }
+
+  static Future<bool> insertPayrollBatch(List<List<dynamic>> rowsData) async {
+    if (_payrollsSheet == null) return false;
+    try {
+      for (var row in rowsData) {
+        await _payrollsSheet!.values.appendRow(row);
+      }
+      return true;
+    } catch (e) {
+      debugPrint('Error inserting payroll batch: $e');
+      return false;
+    }
+  }
+
+  static Future<List<Map<String, dynamic>>> getPayrollEntries() async {
+    if (_payrollsSheet == null) return [];
+    try {
+      final rows = await _payrollsSheet!.values.allRows();
+      if (rows.length <= 1) return [];
+
+      List<Map<String, dynamic>> entries = [];
+      for (int i = 1; i < rows.length; i++) {
+        var r = rows[i];
+        String get(int idx) => idx < r.length ? r[idx].toString().trim() : '';
+        entries.add({
+          '_rowIndex': i + 1,
+          'date': get(0),
+          'chequeNo': get(1),
+          'name': get(2),
+          'bank': get(3),
+          'ifsc': get(4),
+          'ac': get(5),
+          'amount': get(6),
+        });
+      }
+      return entries.reversed.toList(); // Newest first
+    } catch (e) {
+      debugPrint('Error fetching payrolls: $e');
+      return [];
+    }
+  }
+
+  static Future<bool> updatePayrollEntry(
+    int rowIndex,
+    List<dynamic> rowData,
+  ) async {
+    if (_payrollsSheet == null) return false;
+    try {
+      await _payrollsSheet!.values.insertRow(rowIndex, rowData);
+      return true;
+    } catch (e) {
+      debugPrint('Error updating payroll: $e');
+      return false;
+    }
+  }
+
+  static Future<bool> deletePayrollEntry(int rowIndex) async {
+    if (_payrollsSheet == null) return false;
+    try {
+      await _payrollsSheet!.deleteRow(rowIndex);
+      return true;
+    } catch (e) {
+      debugPrint('Error deleting payroll: $e');
       return false;
     }
   }

@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import 'accounting_dashboard.dart';
 import 'cotton_dashboard.dart';
+import 'payroll_dashboard.dart';
 
 class DashboardScreen extends StatelessWidget {
   const DashboardScreen({super.key});
@@ -70,6 +71,22 @@ class DashboardScreen extends StatelessWidget {
                   MaterialPageRoute(
                     builder: (_) => const CottonDashboardScreen(),
                   ),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // NEW: Payrolls Module Card
+              _buildModuleCard(
+                context,
+                title: 'Payrolls Module (वेतन)',
+                subtitle:
+                    'Manage employee salary batches, master cheque numbers, and reports.',
+                icon: Icons.payments_outlined,
+                iconColor: Colors.indigo.shade700,
+                bgColor: Colors.indigo.shade50,
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const PayrollDashboard()),
                 ),
               ),
               const SizedBox(height: 16),
