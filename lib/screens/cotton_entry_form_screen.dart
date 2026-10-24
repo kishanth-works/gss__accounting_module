@@ -1,3 +1,4 @@
+// ignore_for_file: use_build_context_synchronously
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../services/sheets_service.dart';
@@ -159,7 +160,12 @@ class _CottonEntryFormScreenState extends State<CottonEntryFormScreen> {
       _isSaving = true;
     });
 
-    String formattedDate = DateFormat('dd/MM/yyyy').format(_selectedDate);
+    // ---------------------------------------------------------
+    // THE ULTIMATE FIX: Unambiguous ISO Date Format
+    // Google Sheets always reads 'YYYY-MM-DD' perfectly as a Date object.
+    // It will NEVER flip the days/months, and it removes the text apostrophe!
+    // ---------------------------------------------------------
+    String formattedDate = DateFormat('yyyy-MM-dd').format(_selectedDate);
 
     Map<String, dynamic> entryData = {
       'date': formattedDate,

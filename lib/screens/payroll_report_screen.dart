@@ -2,15 +2,60 @@
 import 'dart:io';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:excel/excel.dart' as excel;
 import 'package:file_picker/file_picker.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import '../services/sheets_service.dart';
+import 'payroll_entry_screen.dart';
 
 // ==========================================
-// 1. HINDI NUMBER TO WORDS ENGINE
+// SMART IFSC BANK DETECTOR
+// ==========================================
+String getBankName(String sheetBank, String ifsc) {
+  if (sheetBank.trim().isNotEmpty) return sheetBank.trim();
+  String code = ifsc.trim().toUpperCase();
+  if (code.length >= 4) {
+    switch (code.substring(0, 4)) {
+      case 'UBIN':
+        return 'Union Bank of India';
+      case 'SBIN':
+        return 'State Bank of India';
+      case 'BARB':
+        return 'Bank of Baroda';
+      case 'CNRB':
+        return 'Canara Bank';
+      case 'PUNB':
+        return 'Punjab National Bank';
+      case 'MAHB':
+        return 'Bank of Maharashtra';
+      case 'IDIB':
+        return 'Indian Bank';
+      case 'BKID':
+        return 'Bank of India';
+      case 'CBIN':
+        return 'Central Bank of India';
+      case 'IOBA':
+        return 'Indian Overseas Bank';
+      case 'UCBA':
+        return 'UCO Bank';
+      case 'PSIB':
+        return 'Punjab & Sind Bank';
+      case 'HDFC':
+        return 'HDFC Bank';
+      case 'ICIC':
+        return 'ICICI Bank';
+      case 'UTIB':
+        return 'Axis Bank';
+    }
+  }
+  return '';
+}
+
+// ==========================================
+// HINDI NUMBER TO WORDS ENGINE
 // ==========================================
 class HindiAmountWords {
   static const List<String> _words0To99 = [
@@ -121,7 +166,6 @@ class HindiAmountWords {
     if (val == 0) return "शून्य रुपया मात्र";
 
     String result = "";
-
     int crore = val ~/ 10000000;
     val %= 10000000;
     if (crore > 0) result += "${_words0To99[crore]} करोड़ ";
@@ -144,9 +188,6 @@ class HindiAmountWords {
   }
 }
 
-// ==========================================
-// 2. PAYROLL REPORT SCREEN (BATCH VIEW)
-// ==========================================
 class PayrollReportScreen extends StatefulWidget {
   const PayrollReportScreen({super.key});
 
@@ -180,14 +221,43 @@ class _PayrollReportScreenState extends State<PayrollReportScreen> {
   void _groupData() {
     Map<String, List<Map<String, dynamic>>> temp = {};
     for (var entry in _allEntries) {
+      String rawDate = (entry['date'] ?? '').toString().trim();
+      String formattedDate = rawDate;
+
+      // FIX: Decode 5-digit Google Sheets serial dates and normalize everything to DD/MM/YYYY
+      if (int.tryParse(rawDate) != null && rawDate.length == 5) {
+        DateTime parsed = DateTime(
+          1899,
+          12,
+          30,
+        ).add(Duration(days: int.parse(rawDate)));
+        formattedDate = DateFormat('dd/MM/yyyy').format(parsed);
+      } else {
+        try {
+          DateTime parsed = DateFormat(
+            'yyyy-MM-dd',
+          ).parseStrict(rawDate.replaceAll("'", ""));
+          formattedDate = DateFormat('dd/MM/yyyy').format(parsed);
+        } catch (_) {
+          try {
+            DateTime parsed = DateFormat(
+              'MM/dd/yyyy',
+            ).parseStrict(rawDate.replaceAll("'", ""));
+            formattedDate = DateFormat('dd/MM/yyyy').format(parsed);
+          } catch (_) {}
+        }
+      }
+
+      formattedDate = formattedDate.replaceAll("'", "");
+      entry['date'] = formattedDate;
+
       String cheque = (entry['chequeNo'] ?? '').toString().trim();
-      String date = (entry['date'] ?? '').toString().trim();
-      String key = "$cheque|$date";
+      String key = "$cheque|$formattedDate";
 
       if (_searchQuery.isNotEmpty) {
         bool match =
             cheque.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-            date.contains(_searchQuery) ||
+            formattedDate.contains(_searchQuery) ||
             (entry['name'] ?? '').toString().toLowerCase().contains(
               _searchQuery.toLowerCase(),
             );
@@ -200,218 +270,16 @@ class _PayrollReportScreenState extends State<PayrollReportScreen> {
     _groupedBatches = temp;
   }
 
-  // ==========================================
-  // 3. INTERACTIVE BATCH EDITOR (MOBILE RESPONSIVE)
-  // ==========================================
-  void _showBatchEditDialog(
-    String batchKey,
-    List<Map<String, dynamic>> entries,
-  ) {
-    List<String> parts = batchKey.split('|');
-    String chequeNo = parts[0];
-    String date = parts.length > 1 ? parts[1] : '';
-
-    showDialog(
-      context: context,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return AlertDialog(
-              title: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Expanded(
-                    child: Text(
-                      'Edit Chq #$chequeNo',
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  Text(
-                    'Date: $date',
-                    style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
-                  ),
-                ],
-              ),
-              // RESPONSIVE UPGRADE: Dynamically fills 95% width on mobile screens
-              content: SizedBox(
-                width: MediaQuery.of(context).size.width * 0.95,
-                height: MediaQuery.of(context).size.height * 0.7,
-                child: Column(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      color: Colors.indigo.shade50,
-                      child: const Row(
-                        children: [
-                          Expanded(
-                            flex: 3,
-                            child: Text(
-                              'Name',
-                              style: TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                          ),
-                          Expanded(
-                            flex: 2,
-                            child: Text(
-                              'A/C No.',
-                              style: TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                          ),
-                          Expanded(
-                            flex: 2,
-                            child: Text(
-                              'Amount (₹)',
-                              style: TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                          ),
-                          SizedBox(width: 36),
-                        ],
-                      ),
-                    ),
-                    Expanded(
-                      child: ListView.builder(
-                        itemCount: entries.length,
-                        itemBuilder: (context, idx) {
-                          final item = entries[idx];
-                          TextEditingController amtCtrl = TextEditingController(
-                            text: item['amount'],
-                          );
-                          return Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 4),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  flex: 3,
-                                  child: Text(
-                                    item['name'] ?? '',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 13,
-                                    ),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                                Expanded(
-                                  flex: 2,
-                                  child: Text(
-                                    item['ac'] ?? '',
-                                    style: const TextStyle(
-                                      color: Colors.grey,
-                                      fontSize: 12,
-                                    ),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                                Expanded(
-                                  flex: 2,
-                                  child: TextField(
-                                    controller: amtCtrl,
-                                    keyboardType: TextInputType.number,
-                                    decoration: const InputDecoration(
-                                      border: OutlineInputBorder(),
-                                      contentPadding: EdgeInsets.symmetric(
-                                        horizontal: 6,
-                                        vertical: 8,
-                                      ),
-                                      isDense: true,
-                                    ),
-                                    onSubmitted: (newVal) async {
-                                      setState(() => _isLoading = true);
-                                      item['amount'] = newVal;
-                                      List<dynamic> updatedRow = [
-                                        item['date'],
-                                        item['chequeNo'],
-                                        item['name'],
-                                        item['bank'],
-                                        item['ifsc'],
-                                        item['ac'],
-                                        newVal,
-                                      ];
-                                      await SheetsService.updatePayrollEntry(
-                                        item['_rowIndex'],
-                                        updatedRow,
-                                      );
-                                      _fetchData();
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        const SnackBar(
-                                          content: Text('Amount Updated'),
-                                          backgroundColor: Colors.green,
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                ),
-                                IconButton(
-                                  icon: const Icon(
-                                    Icons.delete,
-                                    color: Colors.red,
-                                    size: 20,
-                                  ),
-                                  padding: EdgeInsets.zero,
-                                  constraints: const BoxConstraints(),
-                                  tooltip: 'Remove from Batch',
-                                  onPressed: () async {
-                                    setState(() => _isLoading = true);
-                                    await SheetsService.deletePayrollEntry(
-                                      item['_rowIndex'],
-                                    );
-                                    Navigator.pop(context);
-                                    _fetchData();
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text(
-                                          'Employee removed from batch',
-                                        ),
-                                        backgroundColor: Colors.orange,
-                                      ),
-                                    );
-                                  },
-                                ),
-                              ],
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              actions: [
-                ElevatedButton(
-                  onPressed: () => Navigator.pop(context),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.indigo,
-                    foregroundColor: Colors.white,
-                  ),
-                  child: const Text('Done Editing'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
-
-  // ==========================================
-  // 4. RETINA HINDI SHAPER FOR PDF
-  // ==========================================
   Future<pw.Widget> _buildHindiText(
     String text, {
     double fontSize = 12,
     bool isBold = false,
     pw.TextAlign align = pw.TextAlign.left,
   }) async {
-    if (text.trim().isEmpty) {
-      return pw.SizedBox(height: fontSize);
-    }
+    if (text.trim().isEmpty) return pw.SizedBox(height: fontSize);
 
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
-
     const double scale = 3.0;
     final scaledFontSize = fontSize * scale;
 
@@ -426,9 +294,8 @@ class _PayrollReportScreenState extends State<PayrollReportScreen> {
 
     final textPainter = TextPainter(
       text: textSpan,
-      textDirection: TextDirection.ltr,
+      textDirection: ui.TextDirection.ltr,
     );
-
     textPainter.layout();
     textPainter.paint(canvas, Offset.zero);
 
@@ -439,8 +306,6 @@ class _PayrollReportScreenState extends State<PayrollReportScreen> {
     );
     final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
 
-    final memoryImage = pw.MemoryImage(byteData!.buffer.asUint8List());
-
     return pw.Container(
       alignment: align == pw.TextAlign.center
           ? pw.Alignment.center
@@ -448,7 +313,7 @@ class _PayrollReportScreenState extends State<PayrollReportScreen> {
                 ? pw.Alignment.centerRight
                 : pw.Alignment.centerLeft),
       child: pw.Image(
-        memoryImage,
+        pw.MemoryImage(byteData!.buffer.asUint8List()),
         width: textPainter.width / scale,
         height: textPainter.height / scale,
         fit: pw.BoxFit.fill,
@@ -456,9 +321,6 @@ class _PayrollReportScreenState extends State<PayrollReportScreen> {
     );
   }
 
-  // ==========================================
-  // 5. HINDI PDF GENERATOR (2-INCH TOP MARGIN)
-  // ==========================================
   Future<void> _exportBatchToPdf(
     String chequeNo,
     String date,
@@ -481,10 +343,13 @@ class _PayrollReportScreenState extends State<PayrollReportScreen> {
           0.0;
       totalAmount += amt;
 
+      // FIX: Apply the smart auto-detect bank helper
+      String smartBankName = getBankName(row['bank'] ?? '', row['ifsc'] ?? '');
+
       tableData.add([
         (i + 1).toString(),
         row['name'] ?? '',
-        row['bank'] ?? '',
+        smartBankName,
         row['ifsc'] ?? '',
         row['ac'] ?? '',
         amt.toStringAsFixed(2),
@@ -558,7 +423,6 @@ class _PayrollReportScreenState extends State<PayrollReportScreen> {
           pw.SizedBox(height: 2),
           subTitleImg,
           pw.SizedBox(height: 12),
-
           pw.Padding(
             padding: const pw.EdgeInsets.only(left: 30),
             child: pw.Column(
@@ -583,7 +447,6 @@ class _PayrollReportScreenState extends State<PayrollReportScreen> {
               ],
             ),
           ),
-
           pw.SizedBox(height: 6),
           pw.Padding(
             padding: const pw.EdgeInsets.symmetric(horizontal: 10),
@@ -621,9 +484,9 @@ class _PayrollReportScreenState extends State<PayrollReportScreen> {
             columnWidths: {
               0: const pw.FlexColumnWidth(0.8),
               1: const pw.FlexColumnWidth(2.5),
-              2: const pw.FlexColumnWidth(1.2),
+              2: const pw.FlexColumnWidth(1.5),
               3: const pw.FlexColumnWidth(2.0),
-              4: const pw.FlexColumnWidth(2.5),
+              4: const pw.FlexColumnWidth(2.2),
               5: const pw.FlexColumnWidth(1.5),
             },
             data: tableData,
@@ -668,9 +531,6 @@ class _PayrollReportScreenState extends State<PayrollReportScreen> {
     );
   }
 
-  // ==========================================
-  // 6. HINDI EXCEL GENERATOR
-  // ==========================================
   Future<void> _exportBatchToExcel(
     String chequeNo,
     String date,
@@ -684,7 +544,7 @@ class _PayrollReportScreenState extends State<PayrollReportScreen> {
 
       sheet.setColumnWidth(0, 8.0);
       sheet.setColumnWidth(1, 25.0);
-      sheet.setColumnWidth(2, 12.0);
+      sheet.setColumnWidth(2, 20.0);
       sheet.setColumnWidth(3, 18.0);
       sheet.setColumnWidth(4, 22.0);
       sheet.setColumnWidth(5, 15.0);
@@ -703,7 +563,6 @@ class _PayrollReportScreenState extends State<PayrollReportScreen> {
         fontSize: 12,
         fontFamily: hindiFont,
       );
-
       var boldHeader = excel.CellStyle(
         bold: true,
         horizontalAlign: excel.HorizontalAlign.Center,
@@ -876,6 +735,12 @@ class _PayrollReportScreenState extends State<PayrollReportScreen> {
             ) ??
             0.0;
 
+        // FIX: Apply the smart auto-detect bank helper to Excel too
+        String smartBankName = getBankName(
+          row['bank'] ?? '',
+          row['ifsc'] ?? '',
+        );
+
         sheet.updateCell(
           excel.CellIndex.indexByColumnRow(
             columnIndex: 0,
@@ -897,7 +762,7 @@ class _PayrollReportScreenState extends State<PayrollReportScreen> {
             columnIndex: 2,
             rowIndex: currentRow,
           ),
-          excel.TextCellValue((row['bank'] ?? '').toString().trim()),
+          excel.TextCellValue(smartBankName),
           cellStyle: borderCell,
         );
         sheet.updateCell(
@@ -951,9 +816,7 @@ class _PayrollReportScreenState extends State<PayrollReportScreen> {
       );
 
       if (outputFile != null) {
-        if (!outputFile.endsWith('.xlsx')) {
-          outputFile += '.xlsx';
-        }
+        if (!outputFile.endsWith('.xlsx')) outputFile += '.xlsx';
         File(outputFile)
           ..createSync(recursive: true)
           ..writeAsBytesSync(bytes!);
@@ -979,12 +842,8 @@ class _PayrollReportScreenState extends State<PayrollReportScreen> {
     setState(() => _isLoading = false);
   }
 
-  // ==========================================
-  // 7. BUILD BATCH CARD UI (MOBILE ADAPTIVE)
-  // ==========================================
   @override
   Widget build(BuildContext context) {
-    // RESPONSIVE BREAKPOINT: Dynamically stacks buttons on mobile screens (< 600px wide)
     final bool isMobile = MediaQuery.of(context).size.width < 600;
 
     return Scaffold(
@@ -1063,8 +922,19 @@ class _PayrollReportScreenState extends State<PayrollReportScreen> {
                         ),
                         child: InkWell(
                           borderRadius: BorderRadius.circular(12),
-                          onTap: () => _showBatchEditDialog(key, entries),
-                          onLongPress: () => _showBatchEditDialog(key, entries),
+                          onTap: () async {
+                            await Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => PayrollEntryScreen(
+                                  editChequeNo: chequeNo,
+                                  editDate: date,
+                                  editEntries: entries,
+                                ),
+                              ),
+                            );
+                            _fetchData();
+                          },
                           child: Padding(
                             padding: const EdgeInsets.all(20),
                             child: Column(
@@ -1132,7 +1002,6 @@ class _PayrollReportScreenState extends State<PayrollReportScreen> {
                                   ],
                                 ),
                                 const Divider(height: 24),
-                                // RESPONSIVE FOOTER: Stacks buttons vertically on narrow mobile phones
                                 isMobile
                                     ? Column(
                                         crossAxisAlignment:
@@ -1220,7 +1089,7 @@ class _PayrollReportScreenState extends State<PayrollReportScreen> {
                                             MainAxisAlignment.spaceBetween,
                                         children: [
                                           Text(
-                                            "${entries.length} Employees in this batch  •  (Long-press to Edit)",
+                                            "${entries.length} Employees in this batch  •  (Tap to Edit/Add More)",
                                             style: TextStyle(
                                               color: Colors.indigo.shade600,
                                               fontWeight: FontWeight.w500,

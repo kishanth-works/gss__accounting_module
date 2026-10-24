@@ -2,9 +2,20 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../services/sheets_service.dart';
+// Import the smart bank detector from the report screen
+import 'payroll_report_screen.dart' show getBankName;
 
 class PayrollEntryScreen extends StatefulWidget {
-  const PayrollEntryScreen({super.key});
+  final String? editChequeNo;
+  final String? editDate;
+  final List<Map<String, dynamic>>? editEntries;
+
+  const PayrollEntryScreen({
+    super.key,
+    this.editChequeNo,
+    this.editDate,
+    this.editEntries,
+  });
 
   @override
   State<PayrollEntryScreen> createState() => _PayrollEntryScreenState();
@@ -15,7 +26,7 @@ class _PayrollEntryScreenState extends State<PayrollEntryScreen> {
   final TextEditingController _chequeController = TextEditingController();
 
   List<Map<String, String>> _allEmployees = [];
-  final List<Map<String, String>> _selectedEmployees = [];
+  final List<Map<String, dynamic>> _selectedEmployees = [];
   final Map<String, TextEditingController> _amountControllers = {};
 
   bool _isLoading = true;
@@ -24,7 +35,45 @@ class _PayrollEntryScreenState extends State<PayrollEntryScreen> {
   @override
   void initState() {
     super.initState();
+    _initializeEditMode();
     _loadEmployees();
+  }
+
+  void _initializeEditMode() {
+    if (widget.editChequeNo != null) {
+      _chequeController.text = widget.editChequeNo!;
+    }
+
+    if (widget.editDate != null) {
+      try {
+        _selectedDate = DateFormat(
+          'dd/MM/yyyy',
+        ).parseStrict(widget.editDate!.replaceAll("'", ""));
+      } catch (_) {
+        try {
+          _selectedDate = DateFormat(
+            'yyyy-MM-dd',
+          ).parseStrict(widget.editDate!);
+        } catch (_) {}
+      }
+    }
+
+    if (widget.editEntries != null) {
+      for (var entry in widget.editEntries!) {
+        _selectedEmployees.add({
+          'name': entry['name'] ?? '',
+          'bank': entry['bank'] ?? '',
+          'ifsc': entry['ifsc'] ?? '',
+          'ac': entry['ac'] ?? '',
+          '_rowIndex': entry['_rowIndex'],
+        });
+
+        String key = (entry['name'] ?? '') + (entry['ac'] ?? '');
+        _amountControllers[key] = TextEditingController(
+          text: entry['amount']?.toString() ?? '',
+        );
+      }
+    }
   }
 
   @override
@@ -46,9 +95,6 @@ class _PayrollEntryScreenState extends State<PayrollEntryScreen> {
     });
   }
 
-  // ==========================================
-  // MOBILE-RESPONSIVE EMPLOYEE SELECT DIALOG
-  // ==========================================
   void _showEmployeeSelectDialog() {
     List<Map<String, String>> filtered = List.from(_allEmployees);
     showDialog(
@@ -61,7 +107,6 @@ class _PayrollEntryScreenState extends State<PayrollEntryScreen> {
                 'Select Employees',
                 style: TextStyle(fontWeight: FontWeight.bold),
               ),
-              // RESPONSIVE UPGRADE: Dynamically scale to 90% of screen width instead of fixed 450px
               content: SizedBox(
                 width: MediaQuery.of(context).size.width * 0.9,
                 child: Column(
@@ -96,6 +141,13 @@ class _PayrollEntryScreenState extends State<PayrollEntryScreen> {
                                 e['name'] == emp['name'] &&
                                 e['ac'] == emp['ac'],
                           );
+
+                          // SMART UI: Uses the auto-detector here too!
+                          String smartBankName = getBankName(
+                            emp['bank'] ?? '',
+                            emp['ifsc'] ?? '',
+                          );
+
                           return CheckboxListTile(
                             title: Text(
                               emp['name']!,
@@ -104,14 +156,20 @@ class _PayrollEntryScreenState extends State<PayrollEntryScreen> {
                               ),
                             ),
                             subtitle: Text(
-                              'Bank: ${emp['bank']} | A/C: ${emp['ac']}',
+                              'Bank: $smartBankName | A/C: ${emp['ac']}',
                             ),
                             value: isAlreadyAdded,
                             onChanged: (bool? val) {
                               setDialogState(() {
                                 setState(() {
                                   if (val == true && !isAlreadyAdded) {
-                                    _selectedEmployees.add(emp);
+                                    _selectedEmployees.add({
+                                      'name': emp['name']!,
+                                      'bank': emp['bank']!,
+                                      'ifsc': emp['ifsc']!,
+                                      'ac': emp['ac']!,
+                                      '_rowIndex': null,
+                                    });
                                     _amountControllers[emp['name']! +
                                             emp['ac']!] =
                                         TextEditingController();
@@ -173,58 +231,105 @@ class _PayrollEntryScreenState extends State<PayrollEntryScreen> {
     }
 
     setState(() => _isSaving = true);
-    String dateStr = DateFormat('dd/MM/yyyy').format(_selectedDate);
     String chequeNo = _chequeController.text.trim();
 
-    List<List<dynamic>> batchRows = [];
-    for (var emp in _selectedEmployees) {
-      String key = emp['name']! + emp['ac']!;
-      String amountStr = _amountControllers[key]?.text.trim() ?? '0.00';
-      double amount = double.tryParse(amountStr) ?? 0.00;
+    // FIX: Lock to ISO format so Google Sheets NEVER flips dates again!
+    String dateStr = DateFormat('yyyy-MM-dd').format(_selectedDate);
 
-      batchRows.add([
-        dateStr,
-        chequeNo,
-        emp['name']!,
-        emp['bank']!,
-        emp['ifsc']!,
-        emp['ac']!,
-        amount.toStringAsFixed(2),
-      ]);
-    }
+    if (widget.editEntries != null) {
+      for (var emp in _selectedEmployees) {
+        if (emp['_rowIndex'] != null) {
+          String key = emp['name']! + emp['ac']!;
+          double amount =
+              double.tryParse(_amountControllers[key]?.text.trim() ?? '0') ??
+              0.0;
+          await SheetsService.updatePayrollEntry(emp['_rowIndex'], [
+            dateStr,
+            chequeNo,
+            emp['name'],
+            emp['bank'],
+            emp['ifsc'],
+            emp['ac'],
+            amount.toStringAsFixed(2),
+          ]);
+        }
+      }
 
-    bool success = await SheetsService.insertPayrollBatch(batchRows);
-    setState(() => _isSaving = false);
+      List<List<dynamic>> newRows = [];
+      for (var emp in _selectedEmployees) {
+        if (emp['_rowIndex'] == null) {
+          String key = emp['name']! + emp['ac']!;
+          double amount =
+              double.tryParse(_amountControllers[key]?.text.trim() ?? '0') ??
+              0.0;
+          newRows.add([
+            dateStr,
+            chequeNo,
+            emp['name'],
+            emp['bank'],
+            emp['ifsc'],
+            emp['ac'],
+            amount.toStringAsFixed(2),
+          ]);
+        }
+      }
+      if (newRows.isNotEmpty) await SheetsService.insertPayrollBatch(newRows);
 
-    if (success) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Payroll Batch Saved Successfully!'),
-          backgroundColor: Colors.green,
-        ),
-      );
-      Navigator.pop(context);
+      List<int> rowsToDelete = [];
+      for (var originalEntry in widget.editEntries!) {
+        bool stillExists = _selectedEmployees.any(
+          (e) =>
+              e['name'] == originalEntry['name'] &&
+              e['ac'] == originalEntry['ac'],
+        );
+        if (!stillExists && originalEntry['_rowIndex'] != null) {
+          rowsToDelete.add(originalEntry['_rowIndex']);
+        }
+      }
+      rowsToDelete.sort((a, b) => b.compareTo(a));
+      for (int rowIndex in rowsToDelete) {
+        await SheetsService.deletePayrollEntry(rowIndex);
+      }
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Failed to save batch.'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      List<List<dynamic>> batchRows = [];
+      for (var emp in _selectedEmployees) {
+        String key = emp['name']! + emp['ac']!;
+        double amount =
+            double.tryParse(_amountControllers[key]?.text.trim() ?? '0') ?? 0.0;
+        batchRows.add([
+          dateStr,
+          chequeNo,
+          emp['name'],
+          emp['bank'],
+          emp['ifsc'],
+          emp['ac'],
+          amount.toStringAsFixed(2),
+        ]);
+      }
+      await SheetsService.insertPayrollBatch(batchRows);
     }
+
+    setState(() => _isSaving = false);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Payroll Batch Saved Successfully!'),
+        backgroundColor: Colors.green,
+      ),
+    );
+    Navigator.pop(context);
   }
 
   @override
   Widget build(BuildContext context) {
-    // RESPONSIVE BREAKPOINT: Detects if running on a narrower mobile screen (< 600px)
     final bool isMobile = MediaQuery.of(context).size.width < 600;
+    final bool isEditMode = widget.editEntries != null;
 
     return Scaffold(
       backgroundColor: Colors.grey.shade50,
       appBar: AppBar(
-        title: const Text(
-          'New Payroll Batch',
-          style: TextStyle(fontWeight: FontWeight.w600),
+        title: Text(
+          isEditMode ? 'Edit Payroll Batch' : 'New Payroll Batch',
+          style: const TextStyle(fontWeight: FontWeight.w600),
         ),
         backgroundColor: Colors.indigo.shade700,
         foregroundColor: Colors.white,
@@ -236,7 +341,6 @@ class _PayrollEntryScreenState extends State<PayrollEntryScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // TOP HALF: Adaptive Controls (Stacks vertically on phone, horizontal on PC)
                   Card(
                     elevation: 2,
                     child: Padding(
@@ -344,8 +448,7 @@ class _PayrollEntryScreenState extends State<PayrollEntryScreen> {
                                   child: TextField(
                                     controller: _chequeController,
                                     decoration: const InputDecoration(
-                                      labelText:
-                                          'Master Cheque No. (सभी के लिए एक चेक नं०)',
+                                      labelText: 'Master Cheque No.',
                                       border: OutlineInputBorder(),
                                       prefixIcon: Icon(
                                         Icons.numbers,
@@ -358,7 +461,7 @@ class _PayrollEntryScreenState extends State<PayrollEntryScreen> {
                                 ElevatedButton.icon(
                                   onPressed: _showEmployeeSelectDialog,
                                   icon: const Icon(Icons.person_add),
-                                  label: const Text('Select Employees'),
+                                  label: const Text('Add/Select Employees'),
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: Colors.indigo,
                                     foregroundColor: Colors.white,
@@ -373,8 +476,6 @@ class _PayrollEntryScreenState extends State<PayrollEntryScreen> {
                     ),
                   ),
                   const SizedBox(height: 16),
-
-                  // BOTTOM HALF: Selected Employees Grid (Responsive item spacing)
                   Expanded(
                     child: _selectedEmployees.isEmpty
                         ? Center(
@@ -434,14 +535,12 @@ class _PayrollEntryScreenState extends State<PayrollEntryScreen> {
                                             ),
                                             padding: EdgeInsets.zero,
                                             constraints: const BoxConstraints(),
-                                            onPressed: () {
-                                              setState(() {
-                                                _selectedEmployees.removeAt(
-                                                  index,
-                                                );
-                                                _amountControllers.remove(key);
-                                              });
-                                            },
+                                            onPressed: () => setState(() {
+                                              _selectedEmployees.removeAt(
+                                                index,
+                                              );
+                                              _amountControllers.remove(key);
+                                            }),
                                           ),
                                           const SizedBox(width: 8),
                                           Expanded(
@@ -473,9 +572,7 @@ class _PayrollEntryScreenState extends State<PayrollEntryScreen> {
                                           ),
                                           const SizedBox(width: 8),
                                           SizedBox(
-                                            width: isMobile
-                                                ? 110
-                                                : 150, // Caps text box size on mobile so it never overflows
+                                            width: isMobile ? 110 : 150,
                                             child: TextFormField(
                                               controller:
                                                   _amountControllers[key],
@@ -506,12 +603,12 @@ class _PayrollEntryScreenState extends State<PayrollEntryScreen> {
                           ),
                   ),
                   const SizedBox(height: 16),
-
-                  // Submit Button
                   ElevatedButton(
                     onPressed: _isSaving ? null : _submitBatch,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green.shade700,
+                      backgroundColor: isEditMode
+                          ? Colors.orange.shade700
+                          : Colors.green.shade700,
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 16),
                     ),
@@ -524,9 +621,11 @@ class _PayrollEntryScreenState extends State<PayrollEntryScreen> {
                               strokeWidth: 2,
                             ),
                           )
-                        : const Text(
-                            'SAVE PAYROLL BATCH (वेतन सुरक्षित करें)',
-                            style: TextStyle(
+                        : Text(
+                            isEditMode
+                                ? 'UPDATE BATCH (अपडेट करें)'
+                                : 'SAVE PAYROLL BATCH (वेतन सुरक्षित करें)',
+                            style: const TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.bold,
                             ),
